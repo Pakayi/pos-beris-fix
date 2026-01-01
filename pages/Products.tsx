@@ -26,9 +26,10 @@ const Products: React.FC = () => {
       setCameraError(null);
       const timer = setTimeout(async () => {
         try {
-          // FIX: Moved formatsToSupport from .start() config to Html5Qrcode constructor as it is not allowed in Html5QrcodeCameraScanConfig
+          // FIX: Added 'verbose: false' to satisfy Html5QrcodeFullConfig requirement
           const html5QrCode = new Html5Qrcode("product-scanner", {
             formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_128],
+            verbose: false,
           });
           scannerInstanceRef.current = html5QrCode;
 
@@ -196,6 +197,7 @@ const Products: React.FC = () => {
                       {product.units.map((u, i) => (
                         <div key={i} className="text-[11px] font-semibold text-blue-600 uppercase">
                           {u.name}: Rp {u.price.toLocaleString("id-ID")}
+                          <span className="text-gray-400 font-normal ml-1">(M: {u.buyPrice?.toLocaleString("id-ID") || "0"})</span>
                         </div>
                       ))}
                     </td>
@@ -245,19 +247,22 @@ const Products: React.FC = () => {
             <div className="flex justify-between items-center">
               <label className="text-xs font-bold text-gray-400">SATUAN & HARGA</label>
               <button onClick={handleAddUnit} className="text-xs text-blue-600">
-                + Tambah
+                + Tambah Satuan
               </button>
             </div>
             {editingProduct.units?.map((unit: any, idx: number) => (
-              <div key={idx} className="p-3 border rounded-xl space-y-3 relative">
-                <div className="grid grid-cols-2 gap-2">
-                  <Input label="Satuan" value={unit.name} onChange={(e) => handleUnitChange(idx, "name", e.target.value)} />
-                  <Input label="Konversi" inputMode="numeric" value={unit.conversion} onChange={(e) => handleUnitChange(idx, "conversion", e.target.value)} />
+              <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3 relative">
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Nama Satuan (Pcs/Dus)" value={unit.name} onChange={(e) => handleUnitChange(idx, "name", e.target.value)} />
+                  <Input label="Isi (Konversi)" inputMode="numeric" value={unit.conversion} onChange={(e) => handleUnitChange(idx, "conversion", e.target.value)} />
                 </div>
-                <CurrencyInput label="Harga Jual" value={unit.price} onChange={(val) => handleUnitChange(idx, "price", val)} />
+                <div className="grid grid-cols-2 gap-3">
+                  <CurrencyInput label="Harga Beli (Modal)" value={unit.buyPrice || 0} onChange={(val) => handleUnitChange(idx, "buyPrice", val)} />
+                  <CurrencyInput label="Harga Jual" value={unit.price} onChange={(val) => handleUnitChange(idx, "price", val)} />
+                </div>
                 {editingProduct.units.length > 1 && (
-                  <button onClick={() => handleRemoveUnit(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-[10px]">
-                    <i className="fa-solid fa-times"></i>
+                  <button onClick={() => handleRemoveUnit(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg">
+                    <i className="fa-solid fa-times text-xs"></i>
                   </button>
                 )}
               </div>
@@ -268,7 +273,7 @@ const Products: React.FC = () => {
           <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
             Batal
           </Button>
-          <Button onClick={handleSave}>Simpan</Button>
+          <Button onClick={handleSave}>Simpan Produk</Button>
         </div>
       </Modal>
 

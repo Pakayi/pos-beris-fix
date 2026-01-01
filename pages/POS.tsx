@@ -50,9 +50,10 @@ const POS: React.FC = () => {
       // Tunggu DOM siap
       const timer = setTimeout(async () => {
         try {
-          // FIX: Moved formatsToSupport from .start() config to Html5Qrcode constructor
+          // FIX: Added 'verbose: false' to satisfy Html5QrcodeFullConfig requirement
           const html5QrCode = new Html5Qrcode("reader", {
             formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_128],
+            verbose: false,
           });
           scannerInstanceRef.current = html5QrCode;
 
@@ -506,7 +507,7 @@ const POS: React.FC = () => {
             {selectedCustomer && <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[10px] font-bold px-2 py-1 rounded-bl-lg">Member {selectedCustomer.tier}</div>}
             <p className="text-sm text-blue-600">Total Tagihan</p>
             <p className="text-3xl font-bold text-blue-800">Rp {calculations.total.toLocaleString("id-ID")}</p>
-            {calculations.discountAmount > 0 && <p className="text-xs text-green-600 mt-1">Hemat: Rp {calculations.discountAmount.toLocaleString("id-ID")}</p>}
+            {calculations.discountAmount > 0 && <p className="text-xs text-green-600 mt-1">Hemat: Rp {calculations.total.toLocaleString("id-ID")}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Uang Tunai Diterima</label>
