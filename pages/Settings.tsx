@@ -181,13 +181,16 @@ const Settings: React.FC = () => {
                   </Button>
                 )}
               </div>
-              <textarea
-                label="Footer Struk"
-                className="w-full p-2 border rounded-lg text-sm"
-                value={settings.footerMessage}
-                onChange={(e) => setSettings({ ...settings, footerMessage: e.target.value })}
-                placeholder="Pesan di bawah struk..."
-              />
+              {/* Removed invalid 'label' prop from textarea and added a proper label element */}
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-gray-500">Footer Struk</label>
+                <textarea
+                  className="w-full p-2 border rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                  value={settings.footerMessage}
+                  onChange={(e) => setSettings({ ...settings, footerMessage: e.target.value })}
+                  placeholder="Pesan di bawah struk..."
+                />
+              </div>
             </Card>
           </div>
         )}
@@ -201,7 +204,7 @@ const Settings: React.FC = () => {
                 <p className="text-sm text-gray-500">Daftar pengguna yang terhubung ke Warung Anda.</p>
               </div>
               <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg border border-blue-100 font-mono text-sm">
-                ID Warung: <span className="font-bold select-all cursor-pointer">{settings.securityPin ? "********" : db.exportDatabase().length > 0 ? JSON.parse(localStorage.getItem("warung_user_profile") || "{}").warungId : "N/A"}</span>
+                ID Warung: <span className="font-bold select-all cursor-pointer">{settings.securityPin ? "********" : db.getProducts().length > 0 ? JSON.parse(localStorage.getItem("warung_user_profile") || "{}").warungId : "N/A"}</span>
               </div>
             </div>
 

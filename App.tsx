@@ -6,6 +6,7 @@ import Products from "./pages/Products";
 import Customers from "./pages/Customers";
 import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
+import Inventory from "./pages/Inventory"; // New
 import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "cashier"] },
   { path: "/pos", label: "Kasir (POS)", icon: "fa-cash-register", roles: ["owner", "cashier"] },
   { path: "/products", label: "Produk", icon: "fa-box", roles: ["owner", "cashier"] },
+  { path: "/inventory", label: "Log Stok", icon: "fa-boxes-stacked", roles: ["owner", "cashier"] }, // New
   { path: "/customers", label: "Pelanggan", icon: "fa-users", roles: ["owner", "cashier"] },
   { path: "/reports", label: "Laporan", icon: "fa-chart-pie", roles: ["owner"] },
   { path: "/settings", label: "Pengaturan", icon: "fa-gear", roles: ["owner"] },
@@ -182,6 +184,7 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
               }
             />
             <Route path="/products" element={<Products role={profile.role} />} />
+            <Route path="/inventory" element={<Inventory />} />
             <Route path="/customers" element={<Customers />} />
             {profile.role === "owner" && (
               <>

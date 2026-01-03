@@ -17,6 +17,23 @@ export interface Product {
   updatedAt: number;
 }
 
+export type StockLogType = "SALE" | "RESTOCK" | "ADJUSTMENT" | "INITIAL";
+
+export interface StockLog {
+  id: string;
+  productId: string;
+  productName: string;
+  type: "IN" | "OUT";
+  logType: StockLogType;
+  quantity: number; // absolute value
+  unitName: string;
+  previousStock: number;
+  currentStock: number;
+  reason: string;
+  operatorName: string;
+  timestamp: number;
+}
+
 export type CustomerTier = "Bronze" | "Silver" | "Gold";
 
 export interface Customer {

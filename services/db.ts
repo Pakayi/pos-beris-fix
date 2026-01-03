@@ -1,6 +1,6 @@
-import { Product, Transaction, AppSettings, Customer, UserProfile } from "../types";
+import { Product, Transaction, AppSettings, Customer, UserProfile, StockLog } from "../types";
 import { db_fs, auth } from "./firebase";
-import { doc, setDoc, collection, deleteDoc, onSnapshot, getDoc, query, where, getDocs, updateDoc } from "firebase/firestore";
+import { doc, setDoc, collection, deleteDoc, onSnapshot, getDoc, query, where, getDocs, updateDoc, orderBy, limit } from "firebase/firestore";
 
 const STORAGE_KEYS = {
   PRODUCTS: "warung_products",
@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   CUSTOMERS: "warung_customers",
   SETTINGS: "warung_settings",
   PROFILE: "warung_user_profile",
+  STOCK_LOGS: "warung_stock_logs",
   INIT: "warung_initialized",
 };
 
@@ -61,42 +62,24 @@ class DBService {
   private setupCloudSync() {
     if (!this.activeWarungId) return;
 
-    // Bersihkan listener lama jika ada
     this.unsubscribers.forEach((unsub) => unsub());
     this.unsubscribers = [];
 
-    // Sync Products
-    const unsubProducts = onSnapshot(
-      collection(db_fs, `warungs/${this.activeWarungId}/products`),
-      (snapshot) => {
-        const products: any[] = [];
-        snapshot.forEach((doc) => products.push(doc.data()));
-        if (products.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-          window.dispatchEvent(new Event("products-updated"));
-        }
-      },
-      (error) => {
-        console.error("Firestore Products Sync Error:", error);
-        if (error.code === "permission-denied") {
-          console.warn("Akses ditolak. Pastikan Security Rules sudah diupdate.");
-        }
+    const unsubProducts = onSnapshot(collection(db_fs, `warungs/${this.activeWarungId}/products`), (snapshot) => {
+      const products: any[] = [];
+      snapshot.forEach((doc) => products.push(doc.data()));
+      if (products.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+        window.dispatchEvent(new Event("products-updated"));
       }
-    );
+    });
 
-    // Sync Settings
-    const unsubSettings = onSnapshot(
-      doc(db_fs, `warungs/${this.activeWarungId}/config/settings`),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(snapshot.data()));
-          window.dispatchEvent(new Event("settings-updated"));
-        }
-      },
-      (error) => {
-        console.error("Firestore Settings Sync Error:", error);
+    const unsubSettings = onSnapshot(doc(db_fs, `warungs/${this.activeWarungId}/config/settings`), (snapshot) => {
+      if (snapshot.exists()) {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(snapshot.data()));
+        window.dispatchEvent(new Event("settings-updated"));
       }
-    );
+    });
 
     this.unsubscribers.push(unsubProducts, unsubSettings);
   }
@@ -111,12 +94,11 @@ class DBService {
         return profile;
       }
     } catch (e) {
-      console.error("Error fetching user profile:", e);
+      console.error(e);
     }
     return null;
   }
 
-  // --- STAFF MANAGEMENT ---
   async getStaff(): Promise<UserProfile[]> {
     if (!this.activeWarungId) return [];
     try {
@@ -126,18 +108,40 @@ class DBService {
       snapshot.forEach((doc) => staff.push(doc.data() as UserProfile));
       return staff;
     } catch (e) {
-      console.error("Error fetching staff:", e);
       return [];
     }
   }
 
   async updateUserStatus(uid: string, active: boolean): Promise<void> {
+    await updateDoc(doc(db_fs, "users", uid), { active });
+  }
+
+  // --- STOCK LOGS ---
+  async saveStockLog(log: StockLog): Promise<void> {
+    if (!this.activeWarungId) return;
+    const logs = this.getStockLogs();
+    logs.unshift(log);
+    localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs.slice(0, 100))); // Keep 100 local
     try {
-      await updateDoc(doc(db_fs, "users", uid), { active });
+      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/stock_logs`, log.id), this.sanitizeForFirestore(log));
     } catch (e) {
-      console.error("Error updating user status:", e);
-      throw e;
+      console.error(e);
     }
+  }
+
+  getStockLogs(): StockLog[] {
+    const data = localStorage.getItem(STORAGE_KEYS.STOCK_LOGS);
+    return data ? JSON.parse(data) : [];
+  }
+
+  async fetchRemoteStockLogs(): Promise<StockLog[]> {
+    if (!this.activeWarungId) return [];
+    const q = query(collection(db_fs, `warungs/${this.activeWarungId}/stock_logs`), orderBy("timestamp", "desc"), limit(50));
+    const snapshot = await getDocs(q);
+    const logs: StockLog[] = [];
+    snapshot.forEach((doc) => logs.push(doc.data() as StockLog));
+    localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs));
+    return logs;
   }
 
   // --- PRODUCTS ---
@@ -146,7 +150,7 @@ class DBService {
     return data ? JSON.parse(data) : [];
   }
 
-  async saveProduct(product: Product): Promise<void> {
+  async saveProduct(product: Product, log?: StockLog): Promise<void> {
     if (!this.activeWarungId) return;
     const products = this.getProducts();
     const index = products.findIndex((p) => p.id === product.id);
@@ -158,10 +162,10 @@ class DBService {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
 
     try {
-      const sanitized = this.sanitizeForFirestore(updatedProduct);
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, product.id), sanitized);
+      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, product.id), this.sanitizeForFirestore(updatedProduct));
+      if (log) await this.saveStockLog(log);
     } catch (e) {
-      console.error("Error saving product to cloud:", e);
+      console.error(e);
     }
   }
 
@@ -169,11 +173,7 @@ class DBService {
     if (!this.activeWarungId) return;
     const products = this.getProducts().filter((p) => p.id !== id);
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-    try {
-      await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, id));
-    } catch (e) {
-      console.error("Error deleting product from cloud:", e);
-    }
+    await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, id));
   }
 
   // --- TRANSACTIONS ---
@@ -184,28 +184,46 @@ class DBService {
 
   async createTransaction(transaction: Transaction): Promise<void> {
     if (!this.activeWarungId) return;
+    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROFILE) || "{}");
     const transactions = this.getTransactions();
     transactions.unshift(transaction);
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
     const products = this.getProducts();
-    transaction.items.forEach((item) => {
-      const productIndex = products.findIndex((p) => p.id === item.productId);
-      if (productIndex >= 0) {
-        products[productIndex].stock -= item.quantity * item.conversion;
-        this.saveProduct(products[productIndex]);
+    for (const item of transaction.items) {
+      const pIdx = products.findIndex((p) => p.id === item.productId);
+      if (pIdx >= 0) {
+        const oldStock = products[pIdx].stock;
+        const qtyToReduce = item.quantity * item.conversion;
+        products[pIdx].stock -= qtyToReduce;
+
+        const log: StockLog = {
+          id: `LOG-SALE-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          productId: item.productId,
+          productName: item.productName,
+          type: "OUT",
+          logType: "SALE",
+          quantity: item.quantity,
+          unitName: item.unitName,
+          previousStock: oldStock,
+          currentStock: products[pIdx].stock,
+          reason: `Penjualan (Struk: ${transaction.id.split("-")[1]})`,
+          operatorName: user.displayName || "Kasir",
+          timestamp: Date.now(),
+        };
+
+        await this.saveProduct(products[pIdx], log);
       }
-    });
+    }
 
     try {
-      const sanitized = this.sanitizeForFirestore(transaction);
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/transactions`, transaction.id), sanitized);
+      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/transactions`, transaction.id), this.sanitizeForFirestore(transaction));
     } catch (e) {
-      console.error("Error saving transaction to cloud:", e);
+      console.error(e);
     }
   }
 
-  // --- CUSTOMERS ---
+  // --- CUSTOMERS & SETTINGS (Keep existing) ---
   getCustomers(): Customer[] {
     const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     return data ? JSON.parse(data) : [];
@@ -218,27 +236,18 @@ class DBService {
     if (index >= 0) customers[index] = customer;
     else customers.push(customer);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-
     try {
-      const sanitized = this.sanitizeForFirestore(customer);
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/customers`, customer.id), sanitized);
-    } catch (e) {
-      console.error("Error saving customer to cloud:", e);
-    }
+      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/customers`, customer.id), this.sanitizeForFirestore(customer));
+    } catch (e) {}
   }
 
   async deleteCustomer(id: string): Promise<void> {
     if (!this.activeWarungId) return;
     const customers = this.getCustomers().filter((c) => c.id !== id);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    try {
-      await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/customers`, id));
-    } catch (e) {
-      console.error("Error deleting customer from cloud:", e);
-    }
+    await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/customers`, id));
   }
 
-  // --- SETTINGS ---
   getSettings(): AppSettings {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     const settings = data ? JSON.parse(data) : DEFAULT_SETTINGS;
@@ -250,11 +259,8 @@ class DBService {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     window.dispatchEvent(new Event("settings-updated"));
     try {
-      const sanitized = this.sanitizeForFirestore(settings);
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/config/settings`, "settings"), sanitized);
-    } catch (e) {
-      console.error("Error saving settings to cloud:", e);
-    }
+      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/config/settings`, "settings"), this.sanitizeForFirestore(settings));
+    } catch (e) {}
   }
 
   exportDatabase(): string {
