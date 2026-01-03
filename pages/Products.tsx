@@ -170,7 +170,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           {isOwner && (
             <>
               <Button onClick={handleExportCSV} variant="outline" icon="fa-file-csv">
-                Export Excel
+                Export CSV
               </Button>
               <Button
                 onClick={() => {
@@ -188,7 +188,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row gap-4 items-center">
-          <Input placeholder="Cari produk..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="max-w-md" prefix="fa-search" />
+          <Input placeholder="Cari nama atau barcode..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="max-w-md" prefix="fa-search" />
           <div className="flex-1"></div>
           <div className="text-xs text-gray-400">
             Total: <b>{filtered.length}</b> produk
@@ -215,7 +215,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                         {product.category} | {product.sku || "-"}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right font-mono">
                       <span className={`font-bold ${isLowStock ? "text-red-600" : "text-slate-700"}`}>{product.stock}</span> {product.baseUnit}
                     </td>
                     <td className="px-4 py-3">
@@ -252,7 +252,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                             </button>
                             <button
                               onClick={() => {
-                                if (confirm("Hapus?")) {
+                                if (confirm("Hapus produk ini secara permanen?")) {
                                   db.deleteProduct(product.id);
                                   refreshProducts();
                                 }
@@ -321,7 +321,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
               label="Alasan / Catatan (Opsional)"
               value={stockAction.reason}
               onChange={(e) => setStockAction({ ...stockAction, reason: e.target.value })}
-              placeholder={stockAction.type === "IN" ? "Contoh: Belanja Supplier A" : "Contoh: Barang Expired"}
+              placeholder={stockAction.type === "IN" ? "Contoh: Belanja Supplier A" : "Contoh: Barang Rusak"}
             />
 
             <div className="pt-4 flex gap-2">
@@ -385,15 +385,22 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <CurrencyInput
-                    label="Modal (Beli)"
-                    value={unit.buyPrice || 0}
-                    onChange={(val) => {
-                      const u = [...editingProduct.units];
-                      u[idx].buyPrice = val;
-                      setEditingProduct({ ...editingProduct, units: u });
-                    }}
-                  />
+                  {isOwner ? (
+                    <CurrencyInput
+                      label="Modal (Beli)"
+                      value={unit.buyPrice || 0}
+                      onChange={(val) => {
+                        const u = [...editingProduct.units];
+                        u[idx].buyPrice = val;
+                        setEditingProduct({ ...editingProduct, units: u });
+                      }}
+                    />
+                  ) : (
+                    <div className="opacity-50">
+                      <label className="block text-xs font-semibold text-gray-500 mb-1">Modal (Beli)</label>
+                      <div className="bg-gray-100 p-2 rounded-lg text-sm italic border text-gray-400">Terkunci</div>
+                    </div>
+                  )}
                   <CurrencyInput
                     label="Jual"
                     value={unit.price}
