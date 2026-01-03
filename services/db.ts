@@ -65,21 +65,33 @@ class DBService {
     this.unsubscribers.forEach((unsub) => unsub());
     this.unsubscribers = [];
 
-    const unsubProducts = onSnapshot(collection(db_fs, `warungs/${this.activeWarungId}/products`), (snapshot) => {
-      const products: any[] = [];
-      snapshot.forEach((doc) => products.push(doc.data()));
-      if (products.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-        window.dispatchEvent(new Event("products-updated"));
+    const unsubProducts = onSnapshot(
+      collection(db_fs, `warungs/${this.activeWarungId}/products`),
+      (snapshot) => {
+        const products: any[] = [];
+        snapshot.forEach((doc) => products.push(doc.data()));
+        if (products.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+          window.dispatchEvent(new Event("products-updated"));
+        }
+      },
+      (error) => {
+        console.warn("Firestore Sync Products Error (Permissions?):", error);
       }
-    });
+    );
 
-    const unsubSettings = onSnapshot(doc(db_fs, `warungs/${this.activeWarungId}/config/settings`), (snapshot) => {
-      if (snapshot.exists()) {
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(snapshot.data()));
-        window.dispatchEvent(new Event("settings-updated"));
+    const unsubSettings = onSnapshot(
+      doc(db_fs, `warungs/${this.activeWarungId}/config/settings`),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(snapshot.data()));
+          window.dispatchEvent(new Event("settings-updated"));
+        }
+      },
+      (error) => {
+        console.warn("Firestore Sync Settings Error (Permissions?):", error);
       }
-    });
+    );
 
     this.unsubscribers.push(unsubProducts, unsubSettings);
   }
@@ -116,12 +128,11 @@ class DBService {
     await updateDoc(doc(db_fs, "users", uid), { active });
   }
 
-  // --- STOCK LOGS ---
   async saveStockLog(log: StockLog): Promise<void> {
     if (!this.activeWarungId) return;
     const logs = this.getStockLogs();
     logs.unshift(log);
-    localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs.slice(0, 100))); // Keep 100 local
+    localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs.slice(0, 100)));
     try {
       await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/stock_logs`, log.id), this.sanitizeForFirestore(log));
     } catch (e) {
@@ -136,15 +147,19 @@ class DBService {
 
   async fetchRemoteStockLogs(): Promise<StockLog[]> {
     if (!this.activeWarungId) return [];
-    const q = query(collection(db_fs, `warungs/${this.activeWarungId}/stock_logs`), orderBy("timestamp", "desc"), limit(50));
-    const snapshot = await getDocs(q);
-    const logs: StockLog[] = [];
-    snapshot.forEach((doc) => logs.push(doc.data() as StockLog));
-    localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs));
-    return logs;
+    try {
+      const q = query(collection(db_fs, `warungs/${this.activeWarungId}/stock_logs`), orderBy("timestamp", "desc"), limit(50));
+      const snapshot = await getDocs(q);
+      const logs: StockLog[] = [];
+      snapshot.forEach((doc) => logs.push(doc.data() as StockLog));
+      localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs));
+      return logs;
+    } catch (e) {
+      console.error("Fetch logs failed:", e);
+      return this.getStockLogs();
+    }
   }
 
-  // --- PRODUCTS ---
   getProducts(): Product[] {
     const data = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     return data ? JSON.parse(data) : [];
@@ -176,7 +191,6 @@ class DBService {
     await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, id));
   }
 
-  // --- TRANSACTIONS ---
   getTransactions(): Transaction[] {
     const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
     return data ? JSON.parse(data) : [];
@@ -223,7 +237,6 @@ class DBService {
     }
   }
 
-  // --- CUSTOMERS & SETTINGS (Keep existing) ---
   getCustomers(): Customer[] {
     const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     return data ? JSON.parse(data) : [];

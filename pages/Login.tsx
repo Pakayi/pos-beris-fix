@@ -47,15 +47,17 @@ const Login: React.FC = () => {
       const user = result.user;
 
       // Cek apakah user sudah ada di database 'users'
-      const userSnap = await getDoc(doc(db_fs, "users", user.uid));
-
-      if (!userSnap.exists()) {
-        // User baru lewat Google, minta mereka isi data Warung
-        setGoogleUserPending(user);
-        setIsRegistering(true);
-        setDisplayName(user.displayName || "");
+      try {
+        const userSnap = await getDoc(doc(db_fs, "users", user.uid));
+        if (!userSnap.exists()) {
+          setGoogleUserPending(user);
+          setIsRegistering(true);
+          setDisplayName(user.displayName || "");
+        }
+      } catch (docErr: any) {
+        // Jika gagal baca profil (kemungkinan besar Rules belum diset)
+        handleAuthError(docErr);
       }
-      // Jika sudah ada, onAuthStateChanged di App.tsx akan otomatis mengarahkan ke Dashboard
     } catch (err: any) {
       handleAuthError(err);
     } finally {
@@ -70,7 +72,6 @@ const Login: React.FC = () => {
 
     let user = googleUserPending;
 
-    // Jika bukan dari Google, buat akun email/pass dulu
     if (!user) {
       const userCredential = await createUserWithEmailAndPassword(auth, emailStr, passStr);
       user = userCredential.user;
@@ -96,6 +97,7 @@ const Login: React.FC = () => {
           plan: "free",
           createdAt: Date.now(),
         };
+        // Menulis ke koleksi 'warungs'
         await setDoc(doc(db_fs, "warungs", finalWarungId), warungData);
         await setDoc(doc(db_fs, `warungs/${finalWarungId}/config`, "settings"), {
           storeName: storeName,
@@ -117,21 +119,38 @@ const Login: React.FC = () => {
         role: role,
         active: true,
       };
+      // Menulis ke koleksi 'users'
       await setDoc(doc(db_fs, "users", user.uid), userProfile);
       if (!googleUserPending) await updateProfile(user, { displayName: nameStr });
     } catch (dbErr: any) {
-      if (!googleUserPending) await deleteUser(user);
+      // Jika error terjadi di tengah jalan (Firestore ditolak), hapus user Auth (jika bukan Google) agar bisa daftar ulang
+      if (!googleUserPending && user) {
+        try {
+          await deleteUser(user);
+        } catch (e) {}
+      }
       throw dbErr;
     }
   };
 
   const handleAuthError = (err: any) => {
-    console.error("Auth Error:", err);
-    let msg = err.message;
-    if (msg.includes("auth/email-already-in-use")) msg = "Email sudah terdaftar.";
-    if (msg.includes("permission-denied")) msg = "Izin database ditolak. Pastikan Firestore Rules sudah 'allow write: if request.auth != null'.";
-    if (msg.includes("auth/popup-closed-by-user")) msg = "Login dibatalkan.";
-    setError(msg || "Terjadi kesalahan sistem.");
+    console.error("Auth Error Trace:", err);
+    let msg = err.message || "";
+    const lowerMsg = msg.toLowerCase();
+
+    if (lowerMsg.includes("permission") || lowerMsg.includes("insufficient")) {
+      msg = "Akses Database Ditolak! Solusi: Klik 'Firestore Database' di menu kiri Firebase Console, klik tab 'Rules', ubah isinya agar membolehkan read/write, lalu klik 'Publish'.";
+    } else if (msg.includes("auth/email-already-in-use")) {
+      msg = "Email sudah terdaftar. Silakan login atau gunakan email lain.";
+    } else if (msg.includes("auth/popup-closed-by-user")) {
+      msg = "Login Google dibatalkan.";
+    } else if (msg.includes("auth/wrong-password") || msg.includes("auth/user-not-found")) {
+      msg = "Email atau Password tidak sesuai.";
+    } else if (msg.includes("auth/weak-password")) {
+      msg = "Password terlalu lemah (min. 6 karakter).";
+    }
+
+    setError(msg || "Terjadi gangguan sistem. Silakan coba lagi.");
   };
 
   return (
@@ -145,48 +164,50 @@ const Login: React.FC = () => {
             <i className="fa-solid fa-cash-register text-2xl text-white"></i>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Warung POS Pro</h1>
-          <p className="text-slate-500 text-sm mt-1">{isRegistering ? (isJoining ? "Bergabung ke Warung" : googleUserPending ? "Selesaikan Pendaftaran" : "Daftar Warung Baru") : "Masuk untuk mengelola toko"}</p>
+          <p className="text-slate-500 text-sm mt-1">{isRegistering ? (isJoining ? "Bergabung ke Warung" : googleUserPending ? "Selesaikan Profil" : "Daftar Warung Baru") : "Masuk ke Dashboard Toko"}</p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded-lg flex items-start gap-2 animate-in fade-in">
-              <i className="fa-solid fa-circle-exclamation mt-0.5"></i>
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-[11px] leading-relaxed rounded-lg flex items-start gap-2 animate-in fade-in">
+              <i className="fa-solid fa-circle-exclamation mt-1 shrink-0"></i>
               <span>{error}</span>
             </div>
           )}
 
           {isRegistering && (
             <>
-              <div className="flex bg-slate-100 p-1 rounded-xl mb-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsJoining(false);
-                    setError("");
-                  }}
-                  className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${!isJoining ? "bg-white shadow text-blue-600" : "text-slate-500"}`}
-                >
-                  Buat Warung
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsJoining(true);
-                    setError("");
-                  }}
-                  className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${isJoining ? "bg-white shadow text-blue-600" : "text-slate-500"}`}
-                >
-                  Gabung Warung
-                </button>
-              </div>
+              {!googleUserPending && (
+                <div className="flex bg-slate-100 p-1 rounded-xl mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsJoining(false);
+                      setError("");
+                    }}
+                    className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${!isJoining ? "bg-white shadow text-blue-600" : "text-slate-500"}`}
+                  >
+                    Buat Warung
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsJoining(true);
+                      setError("");
+                    }}
+                    className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all ${isJoining ? "bg-white shadow text-blue-600" : "text-slate-500"}`}
+                  >
+                    Gabung Warung
+                  </button>
+                </div>
+              )}
 
               <Input label="Nama Lengkap" type="text" placeholder="Nama Anda" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
 
               {isJoining ? (
                 <Input label="Warung ID" type="text" placeholder="WRG-XXXXXX" value={joinWarungId} onChange={(e) => setJoinWarungId(e.target.value.toUpperCase())} required />
               ) : (
-                <Input label="Nama Warung / Toko" type="text" placeholder="Contoh: Warung Berkah" value={storeName} onChange={(e) => setStoreName(e.target.value)} required />
+                <Input label="Nama Warung / Toko" type="text" placeholder="Contoh: Warung Bubu" value={storeName} onChange={(e) => setStoreName(e.target.value)} required />
               )}
             </>
           )}
