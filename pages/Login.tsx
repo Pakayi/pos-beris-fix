@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { auth, db_fs } from "../services/firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { Button, Input, Card } from "../components/UI";
 import { UserProfile } from "../types";
@@ -44,8 +44,8 @@ const Login: React.FC = () => {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Di Vercel, kita butuh jeda lebih lama agar state auth sinkron dengan Firestore
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Jeda krusial untuk sinkronisasi Auth-Firestore di Produksi (Vercel)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       const userSnap = await getDoc(doc(db_fs, "users", user.uid));
       if (!userSnap.exists()) {
@@ -72,7 +72,10 @@ const Login: React.FC = () => {
       user = userCredential.user;
     }
 
-    if (!user) throw new Error("Sesi login belum siap. Silakan klik tombol sekali lagi.");
+    if (!user) throw new Error("Sesi login belum siap. Silakan klik tombol sekali lagi dalam 2 detik.");
+
+    // Tunggu sebentar lagi untuk memastikan token terdaftar di Firestore
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     let finalWarungId = "";
     let role: "owner" | "cashier" = "owner";
@@ -86,7 +89,6 @@ const Login: React.FC = () => {
     } else {
       finalWarungId = `WRG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
-      // Simpan data warung
       await setDoc(doc(db_fs, "warungs", finalWarungId), {
         id: finalWarungId,
         name: storeName,
@@ -96,7 +98,6 @@ const Login: React.FC = () => {
         createdAt: Date.now(),
       });
 
-      // Simpan konfigurasi awal
       await setDoc(doc(db_fs, `warungs/${finalWarungId}/config`, "settings"), {
         storeName: storeName,
         storeAddress: "Alamat belum diatur",
@@ -126,14 +127,19 @@ const Login: React.FC = () => {
   };
 
   const handleAuthError = (err: any) => {
-    console.error("Firebase Error:", err);
-    let msg = err.message || "";
-    if (msg.includes("permission-denied")) {
-      msg = "Akses Ditolak! Pastikan domain ini sudah terdaftar di Authorized Domains Firebase Console Bapak.";
-    } else if (msg.includes("auth/network-request-failed")) {
+    console.error("Detail Error Firebase:", err);
+    let msg = err.message || "Terjadi kesalahan.";
+    const fullMsg = msg.toLowerCase();
+
+    if (fullMsg.includes("permission") || fullMsg.includes("insufficient")) {
+      msg = "Akses Firestore Ditolak! 1. Pastikan Rules sudah ter-PUBLISH. 2. Pastikan domain vercel ini sudah masuk ke 'Authorized Domains' di Firebase Console.";
+    } else if (fullMsg.includes("auth/network-request-failed")) {
       msg = "Koneksi internet bermasalah atau Firebase diblokir.";
+    } else if (fullMsg.includes("auth/popup-closed-by-user")) {
+      msg = "Login Google dibatalkan.";
     }
-    setError(msg || "Terjadi kesalahan sistem.");
+
+    setError(msg);
   };
 
   return (
@@ -152,7 +158,7 @@ const Login: React.FC = () => {
 
         <form onSubmit={handleAuth} className="space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded-lg flex items-start gap-2">
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded-lg flex items-start gap-2 leading-relaxed">
               <i className="fa-solid fa-circle-exclamation mt-1"></i>
               <span>{error}</span>
             </div>
