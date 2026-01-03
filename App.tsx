@@ -10,10 +10,11 @@ import Inventory from "./pages/Inventory";
 import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
-import { auth } from "./services/firebase";
+import { auth, db_fs } from "./services/firebase";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { OfflineIndicator } from "./components/UI";
-import { UserProfile } from "./types";
+import { doc, getDoc } from "firebase/firestore";
+import { OfflineIndicator, Button, Card } from "./components/UI";
+import { UserProfile, Warung } from "./types";
 
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "cashier"] },
@@ -25,20 +26,9 @@ const NAV_ITEMS = [
   { path: "/settings", label: "Pengaturan", icon: "fa-gear", roles: ["owner"] },
 ];
 
-const SidebarItem = ({ path, label, icon, isCollapsed }: any) => (
-  <NavLink
-    to={path}
-    className={({ isActive }) => `flex items-center gap-3 px-3 py-3 rounded-lg transition-colors mb-1 ${isActive ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}
-  >
-    <div className="w-6 text-center">
-      <i className={`fa-solid ${icon}`}></i>
-    </div>
-    {!isCollapsed && <span className="font-medium">{label}</span>}
-  </NavLink>
-);
-
 const App: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [warung, setWarung] = useState<Warung | null>(null);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -49,21 +39,24 @@ const App: React.FC = () => {
         const fetchedProfile = await db.getUserProfile(user.uid);
         if (fetchedProfile) {
           if (!fetchedProfile.active) {
-            alert("Akses Anda telah dinonaktifkan oleh Pemilik Warung.");
+            alert("Akses Anda telah dinonaktifkan.");
             signOut(auth);
-            setProfile(null);
-            setLoading(false);
             return;
           }
+
+          // Cek status warung & trial
+          const warungSnap = await getDoc(doc(db_fs, "warungs", fetchedProfile.warungId));
+          if (warungSnap.exists()) {
+            const wData = warungSnap.data() as Warung;
+            setWarung(wData);
+          }
+
           db.setWarungId(fetchedProfile.warungId);
           setProfile(fetchedProfile);
-        } else {
-          // PENTING: Jika auth ada tapi profil firestore tidak ada,
-          // jangan signOut! Biarkan Login.tsx menangani "Repair Profile"
-          setProfile(null);
         }
       } else {
         setProfile(null);
+        setWarung(null);
       }
       setLoading(false);
     });
@@ -81,7 +74,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Jika belum login Auth ATAU sudah login tapi profil Firestore belum dibuat
   if (!authUser || !profile) {
     return (
       <HashRouter>
@@ -92,12 +84,52 @@ const App: React.FC = () => {
     );
   }
 
+  // LOGIKA BLOKIR TRIAL HABIS
+  const isExpired = warung?.plan === "free" && warung?.trialEndsAt && warung.trialEndsAt < Date.now();
+  if (isExpired && profile.role === "owner") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6">
+        <Card className="max-w-md w-full p-8 text-center space-y-6 border-slate-800">
+          <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto text-4xl">
+            <i className="fa-solid fa-hourglass-end"></i>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Masa Percobaan Habis!</h1>
+            <p className="text-slate-500 mt-2">Akun warung Anda telah ditangguhkan karena masa percobaan 30 hari telah berakhir.</p>
+          </div>
+          <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+            <p className="text-xs text-blue-600 font-bold uppercase mb-1">Cara Aktivasi</p>
+            <p className="text-sm text-blue-900">Hubungi Admin Beris POS untuk melakukan pembayaran dan mengaktifkan akun Anda secara permanen.</p>
+          </div>
+          <Button className="w-full py-4 font-bold text-lg" onClick={() => window.open("https://wa.me/628123456789", "_blank")}>
+            <i className="fa-brands fa-whatsapp mr-2"></i> Hubungi Admin
+          </Button>
+          <button onClick={() => signOut(auth)} className="text-slate-400 text-xs hover:underline">
+            Keluar Akun
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <HashRouter>
       <Layout profile={profile} />
     </HashRouter>
   );
 };
+
+const SidebarItem = ({ path, label, icon, isCollapsed }: any) => (
+  <NavLink
+    to={path}
+    className={({ isActive }) => `flex items-center gap-3 px-3 py-3 rounded-lg transition-colors mb-1 ${isActive ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}
+  >
+    <div className="w-6 text-center">
+      <i className={`fa-solid ${icon}`}></i>
+    </div>
+    {!isCollapsed && <span className="font-medium">{label}</span>}
+  </NavLink>
+);
 
 const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
@@ -121,9 +153,7 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   }, [location, isMobile]);
 
   const handleLogout = () => {
-    if (confirm("Keluar dari aplikasi?")) {
-      signOut(auth);
-    }
+    if (confirm("Keluar dari aplikasi?")) signOut(auth);
   };
 
   const allowedNavItems = NAV_ITEMS.filter((item) => item.roles.includes(profile.role));
@@ -131,9 +161,7 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
       <OfflineIndicator />
-
       {isMobile && isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-20" onClick={() => setSidebarOpen(false)} />}
-
       <aside className={`fixed lg:static inset-y-0 left-0 z-30 bg-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col ${isSidebarOpen ? "w-64 translate-x-0" : isMobile ? "-translate-x-full w-64" : "w-20"}`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800">
           <div className={`flex items-center gap-2 overflow-hidden ${!isSidebarOpen && !isMobile ? "hidden" : ""}`}>
@@ -146,13 +174,11 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             </button>
           )}
         </div>
-
         <nav className="flex-1 p-3 overflow-y-auto">
           {allowedNavItems.map((item) => (
             <SidebarItem key={item.path} {...item} isCollapsed={!isSidebarOpen && !isMobile} />
           ))}
         </nav>
-
         <div className="p-4 border-t border-slate-800 space-y-2">
           <div className={`flex items-center gap-3 ${!isSidebarOpen && !isMobile ? "justify-center" : ""}`}>
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-500 flex items-center justify-center text-[10px] font-bold">{profile.role === "owner" ? "OW" : "KS"}</div>
@@ -171,7 +197,6 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           )}
         </div>
       </aside>
-
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         <header className="lg:hidden h-16 bg-white border-b border-gray-200 flex items-center px-4 justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -181,7 +206,6 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             <h1 className="font-bold text-gray-800 truncate max-w-[200px]">{appSettings.storeName}</h1>
           </div>
         </header>
-
         <div className="flex-1 overflow-auto p-4 lg:p-6 relative">
           <Routes>
             <Route path="/" element={<Dashboard />} />

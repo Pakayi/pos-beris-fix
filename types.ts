@@ -1,17 +1,17 @@
 export interface ProductUnit {
-  name: string; // e.g., "Pcs", "Slop", "Karton"
-  conversion: number; // Multiplier relative to base unit (e.g., 1, 10, 100)
-  price: number; // Selling price for this unit
-  buyPrice: number; // Cost of Goods Sold (Modal) per unit
+  name: string;
+  conversion: number;
+  price: number;
+  buyPrice: number;
 }
 
 export interface Product {
   id: string;
   name: string;
-  sku: string; // Barcode
+  sku: string;
   category: string;
-  baseUnit: string; // The smallest unit (e.g., Pcs)
-  stock: number; // Stored in base units
+  baseUnit: string;
+  stock: number;
   minStockAlert: number;
   units: ProductUnit[];
   updatedAt: number;
@@ -25,7 +25,7 @@ export interface StockLog {
   productName: string;
   type: "IN" | "OUT";
   logType: StockLogType;
-  quantity: number; // absolute value
+  quantity: number;
   unitName: string;
   previousStock: number;
   currentStock: number;
@@ -87,7 +87,6 @@ export interface AppSettings {
   };
 }
 
-// --- NEW MULTI-TENANT TYPES ---
 export type UserRole = "owner" | "cashier" | "admin";
 
 export interface UserProfile {
@@ -106,6 +105,7 @@ export interface Warung {
   status: "active" | "suspended";
   plan: "free" | "pro";
   createdAt: number;
+  trialEndsAt?: number; // Tanggal akhir masa percobaan
 }
 
 export enum AppRoute {

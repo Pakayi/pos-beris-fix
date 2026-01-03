@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { auth, db_fs } from "../services/firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { Button, Input, Card } from "../components/UI";
-import { UserProfile } from "../types";
+import { UserProfile, Warung } from "../types";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -15,7 +15,6 @@ const Login: React.FC = () => {
   const [isJoining, setIsJoining] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     const checkAuthStatus = async () => {
@@ -86,7 +85,6 @@ const Login: React.FC = () => {
       user = userCredential.user;
     }
 
-    // Beri jeda 2 detik agar sistem Auth Firebase benar-benar settle di sisi server
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     let finalWarungId = "";
@@ -115,18 +113,21 @@ const Login: React.FC = () => {
       active: true,
     };
 
-    // Simpan profil dulu
     await setDoc(doc(db_fs, "users", user.uid), userProfile);
 
     if (!isJoining) {
-      await setDoc(doc(db_fs, "warungs", finalWarungId), {
+      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+      const warungData: Warung = {
         id: finalWarungId,
         name: storeName,
         ownerUid: user.uid,
         status: "active",
         plan: "free",
         createdAt: Date.now(),
-      });
+        trialEndsAt: Date.now() + thirtyDays, // Trial 30 Hari
+      };
+
+      await setDoc(doc(db_fs, "warungs", finalWarungId), warungData);
 
       await setDoc(doc(db_fs, `warungs/${finalWarungId}/config`, "settings"), {
         storeName: storeName,
@@ -149,10 +150,9 @@ const Login: React.FC = () => {
   };
 
   const handleAuthError = (err: any) => {
-    console.error("Auth Error:", err);
     let msg = err.message || "Terjadi kesalahan.";
     if (msg.includes("permission-denied")) {
-      msg = "Akses Ditolak! Mohon update Rules di Firebase Console agar kasir bisa mengecek Warung ID.";
+      msg = "Akses Ditolak! Mohon hubungi admin.";
     } else if (msg.includes("auth/email-already-in-use")) {
       msg = "Email sudah terdaftar. Silakan login.";
     }
@@ -167,7 +167,7 @@ const Login: React.FC = () => {
             <i className="fa-solid fa-cash-register text-2xl text-white"></i>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Beris POS</h1>
-          <p className="text-slate-500 text-sm mt-1">{isRegistering ? "Selesaikan Profil Warung" : "Masuk ke Dashboard"}</p>
+          <p className="text-slate-500 text-sm mt-1">{isRegistering ? "Daftar Warung Baru (Trial 30 Hari)" : "Masuk ke Dashboard"}</p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
@@ -201,7 +201,7 @@ const Login: React.FC = () => {
           <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
 
           <Button type="submit" className="w-full py-3 font-bold" disabled={loading}>
-            {loading ? <i className="fa-solid fa-circle-notch fa-spin mr-2"></i> : isRegistering ? "Konfirmasi & Simpan" : "Masuk"}
+            {loading ? <i className="fa-solid fa-circle-notch fa-spin mr-2"></i> : isRegistering ? "Mulai Percobaan Gratis" : "Masuk"}
           </Button>
 
           {!isRegistering && (
@@ -221,7 +221,7 @@ const Login: React.FC = () => {
               }}
               className="text-xs text-blue-600 font-bold"
             >
-              {isRegistering ? "Sudah punya akun? Masuk Saja" : "Belum punya akun? Daftar Gratis"}
+              {isRegistering ? "Sudah punya akun? Masuk" : "Belum punya akun? Daftar Trial"}
             </button>
           </div>
         </form>

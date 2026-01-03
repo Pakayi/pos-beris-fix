@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { db } from "../services/db";
-import { Transaction, Product } from "../types";
-// Added Button to the import list
+import { db_fs } from "../services/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { Card, Toast, Badge, Button } from "../components/UI";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
@@ -14,11 +14,26 @@ const Dashboard: React.FC = () => {
   });
   const [chartData, setChartData] = useState<any[]>([]);
   const [showLowStockToast, setShowLowStockToast] = useState(false);
+  const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
 
-  // Mengambil profile untuk cek plan
   const profile = JSON.parse(localStorage.getItem("warung_user_profile") || "{}");
 
   useEffect(() => {
+    const checkTrial = async () => {
+      if (profile.warungId && profile.role === "owner") {
+        const warungSnap = await getDoc(doc(db_fs, "warungs", profile.warungId));
+        if (warungSnap.exists()) {
+          const data = warungSnap.data();
+          if (data.plan === "free" && data.trialEndsAt) {
+            const diff = data.trialEndsAt - Date.now();
+            const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+            setTrialDaysLeft(days);
+          }
+        }
+      }
+    };
+    checkTrial();
+
     const transactions = db.getTransactions();
     const products = db.getProducts();
     const now = new Date();
@@ -58,11 +73,28 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {trialDaysLeft !== null && trialDaysLeft <= 7 && (
+        <div className="bg-amber-100 border-l-4 border-amber-500 p-4 rounded-r-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <i className="fa-solid fa-hourglass-half text-amber-600 text-xl"></i>
+            <div>
+              <p className="text-sm font-bold text-amber-900">Masa Percobaan Hampir Berakhir!</p>
+              <p className="text-xs text-amber-700">
+                Tersisa <b>{trialDaysLeft} hari</b> lagi. Hubungi kami untuk aktivasi permanen.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-700 text-xs" onClick={() => window.open("https://wa.me/628123456789", "_blank")}>
+            Aktivasi Sekarang
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold text-slate-800">Dashboard Toko</h1>
-            <Badge color={profile.plan === "pro" ? "green" : "blue"}>{profile.plan === "pro" ? "PRO PLAN" : "FREE PLAN"}</Badge>
+            <Badge color={profile.plan === "pro" ? "green" : "blue"}>{profile.plan === "pro" ? "PRO PLAN" : trialDaysLeft !== null ? `TRIAL: ${trialDaysLeft} HARI` : "FREE PLAN"}</Badge>
           </div>
           <p className="text-slate-500 text-sm">
             Selamat datang kembali, <b>{profile.displayName}</b>
