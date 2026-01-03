@@ -6,12 +6,12 @@ import Products from "./pages/Products";
 import Customers from "./pages/Customers";
 import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
-import Inventory from "./pages/Inventory"; // New
+import Inventory from "./pages/Inventory";
 import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
 import { auth } from "./services/firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { OfflineIndicator } from "./components/UI";
 import { UserProfile } from "./types";
 
@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "cashier"] },
   { path: "/pos", label: "Kasir (POS)", icon: "fa-cash-register", roles: ["owner", "cashier"] },
   { path: "/products", label: "Produk", icon: "fa-box", roles: ["owner", "cashier"] },
-  { path: "/inventory", label: "Log Stok", icon: "fa-boxes-stacked", roles: ["owner", "cashier"] }, // New
+  { path: "/inventory", label: "Log Stok", icon: "fa-boxes-stacked", roles: ["owner", "cashier"] },
   { path: "/customers", label: "Pelanggan", icon: "fa-users", roles: ["owner", "cashier"] },
   { path: "/reports", label: "Laporan", icon: "fa-chart-pie", roles: ["owner"] },
   { path: "/settings", label: "Pengaturan", icon: "fa-gear", roles: ["owner"] },
@@ -39,22 +39,28 @@ const SidebarItem = ({ path, label, icon, isCollapsed }: any) => (
 
 const App: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setAuthUser(user);
       if (user) {
         const fetchedProfile = await db.getUserProfile(user.uid);
         if (fetchedProfile) {
           if (!fetchedProfile.active) {
             alert("Akses Anda telah dinonaktifkan oleh Pemilik Warung.");
             signOut(auth);
+            setProfile(null);
+            setLoading(false);
             return;
           }
           db.setWarungId(fetchedProfile.warungId);
           setProfile(fetchedProfile);
         } else {
-          signOut(auth);
+          // PENTING: Jika auth ada tapi profil firestore tidak ada,
+          // jangan signOut! Biarkan Login.tsx menangani "Repair Profile"
+          setProfile(null);
         }
       } else {
         setProfile(null);
@@ -75,16 +81,20 @@ const App: React.FC = () => {
     );
   }
 
+  // Jika belum login Auth ATAU sudah login tapi profil Firestore belum dibuat
+  if (!authUser || !profile) {
+    return (
+      <HashRouter>
+        <Routes>
+          <Route path="*" element={<Login />} />
+        </Routes>
+      </HashRouter>
+    );
+  }
+
   return (
     <HashRouter>
-      {!profile ? (
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="*" element={<Navigate to="/login" />} />
-        </Routes>
-      ) : (
-        <Layout profile={profile} />
-      )}
+      <Layout profile={profile} />
     </HashRouter>
   );
 };
