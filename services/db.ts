@@ -75,7 +75,7 @@ class DBService {
           window.dispatchEvent(new Event("products-updated"));
         }
       },
-      (error) => console.warn("Sync Products Waiting/Error:", error.message)
+      (error) => console.warn("Sync Products Waiting...")
     );
 
     const unsubSettings = onSnapshot(
@@ -86,7 +86,7 @@ class DBService {
           window.dispatchEvent(new Event("settings-updated"));
         }
       },
-      (error) => console.warn("Sync Settings Waiting/Error:", error.message)
+      (error) => console.warn("Sync Settings Waiting...")
     );
 
     this.unsubscribers.push(unsubProducts, unsubSettings);
@@ -102,12 +102,11 @@ class DBService {
         return profile;
       }
     } catch (e: any) {
-      // Jika baru daftar, Firestore terkadang butuh waktu 1-3 detik untuk sinkronisasi Rules
-      if (retryCount < 4) {
+      if (retryCount < 3) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         return this.getUserProfile(uid, retryCount + 1);
       }
-      console.error("Profile Fetch Failed after retries:", e.message);
+      console.error("Profile Fetch Failed:", e.message);
     }
     return null;
   }
