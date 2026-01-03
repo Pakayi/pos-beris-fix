@@ -75,9 +75,7 @@ class DBService {
           window.dispatchEvent(new Event("products-updated"));
         }
       },
-      (error) => {
-        console.warn("Firestore Sync Products Error (Permissions?):", error);
-      }
+      (error) => console.warn("Sync Products Waiting/Error:", error.message)
     );
 
     const unsubSettings = onSnapshot(
@@ -88,15 +86,13 @@ class DBService {
           window.dispatchEvent(new Event("settings-updated"));
         }
       },
-      (error) => {
-        console.warn("Firestore Sync Settings Error (Permissions?):", error);
-      }
+      (error) => console.warn("Sync Settings Waiting/Error:", error.message)
     );
 
     this.unsubscribers.push(unsubProducts, unsubSettings);
   }
 
-  async getUserProfile(uid: string): Promise<UserProfile | null> {
+  async getUserProfile(uid: string, retryCount = 0): Promise<UserProfile | null> {
     try {
       const userDoc = await getDoc(doc(db_fs, "users", uid));
       if (userDoc.exists()) {
@@ -105,8 +101,13 @@ class DBService {
         this.activeWarungId = profile.warungId;
         return profile;
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      // Jika baru daftar, Firestore terkadang butuh waktu 1-3 detik untuk sinkronisasi Rules
+      if (retryCount < 4) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return this.getUserProfile(uid, retryCount + 1);
+      }
+      console.error("Profile Fetch Failed after retries:", e.message);
     }
     return null;
   }
@@ -155,7 +156,6 @@ class DBService {
       localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs));
       return logs;
     } catch (e) {
-      console.error("Fetch logs failed:", e);
       return this.getStockLogs();
     }
   }
@@ -198,7 +198,9 @@ class DBService {
 
   async createTransaction(transaction: Transaction): Promise<void> {
     if (!this.activeWarungId) return;
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROFILE) || "{}");
+    const profileStr = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const user = profileStr ? JSON.parse(profileStr) : { displayName: "Kasir" };
+
     const transactions = this.getTransactions();
     transactions.unshift(transaction);
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));

@@ -17,19 +17,23 @@ const Login: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Deteksi jika user sebenarnya sudah login tapi datanya hilang di Firestore
+  // Deteksi jika user sebenarnya sudah login tapi datanya belum sinkron
   useEffect(() => {
     const checkAuthStatus = async () => {
       if (auth.currentUser) {
         setLoading(true);
-        const userSnap = await getDoc(doc(db_fs, "users", auth.currentUser.uid));
-        if (!userSnap.exists()) {
-          // User ada di Auth, tapi doc users kosong. Paksa ke mode pendaftaran.
-          setIsRegistering(true);
-          setDisplayName(auth.currentUser.displayName || "");
-          setError("Akun Anda terdeteksi tapi data Warung belum lengkap. Silakan lengkapi profil di bawah.");
+        try {
+          const userSnap = await getDoc(doc(db_fs, "users", auth.currentUser.uid));
+          if (!userSnap.exists()) {
+            setIsRegistering(true);
+            setDisplayName(auth.currentUser.displayName || "");
+          }
+        } catch (e: any) {
+          console.warn("Sistem menunggu izin Firestore...", e.message);
+          // Jangan langsung tampilkan error merah di sini agar user tidak panik
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
       }
     };
     checkAuthStatus();
@@ -81,12 +85,19 @@ const Login: React.FC = () => {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const userSnap = await getDoc(doc(db_fs, "users", user.uid));
-      if (!userSnap.exists()) {
+      // Beri jeda sebentar agar Firebase Auth benar-benar settle
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      try {
+        const userSnap = await getDoc(doc(db_fs, "users", user.uid));
+        if (!userSnap.exists()) {
+          setIsRegistering(true);
+          setDisplayName(user.displayName || "");
+        }
+      } catch (e) {
+        // Jika gagal read profil (karena rules), paksa isi profil baru
         setIsRegistering(true);
         setDisplayName(user.displayName || "");
-        setError("Login Google Berhasil! Sekarang lengkapi Nama Warung Bapak.");
       }
     } catch (err: any) {
       handleAuthError(err);
@@ -101,7 +112,7 @@ const Login: React.FC = () => {
 
     let user = auth.currentUser;
 
-    // 1. Buat Auth User jika belum ada sama sekali
+    // 1. Buat Auth User jika belum ada
     if (!user) {
       const userCredential = await createUserWithEmailAndPassword(auth, emailStr, passStr);
       user = userCredential.user;
@@ -109,17 +120,26 @@ const Login: React.FC = () => {
 
     if (!user) throw new Error("Gagal mengautentikasi.");
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Beri jeda krusial agar Security Rules mengenali user yang baru login
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     let finalWarungId = "";
     let role: "owner" | "cashier" = "owner";
 
     if (isJoining) {
-      const warungRef = doc(db_fs, "warungs", joinWarungId.trim().toUpperCase());
-      const warungSnap = await getDoc(warungRef);
-      if (!warungSnap.exists()) throw new Error("Warung ID tidak ditemukan.");
-      finalWarungId = joinWarungId.trim().toUpperCase();
-      role = "cashier";
+      const cleanId = joinWarungId.trim().toUpperCase();
+      try {
+        const warungRef = doc(db_fs, "warungs", cleanId);
+        const warungSnap = await getDoc(warungRef);
+        if (!warungSnap.exists()) throw new Error("Warung ID tidak ditemukan. Periksa kembali kodenya.");
+        finalWarungId = cleanId;
+        role = "cashier";
+      } catch (e: any) {
+        if (e.code === "permission-denied") {
+          throw new Error("Akses Gabung Ditolak. Pastikan Rules Firestore sudah diset ke 'Production' atau 'Test Mode' dengan benar.");
+        }
+        throw e;
+      }
     } else {
       finalWarungId = `WRG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
     }
@@ -135,7 +155,6 @@ const Login: React.FC = () => {
     };
 
     await setDoc(doc(db_fs, "users", user.uid), userProfile);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // 3. Buat dokumen Warung jika owner
     if (!isJoining) {
@@ -164,24 +183,23 @@ const Login: React.FC = () => {
       await updateProfile(user, { displayName: nameStr });
     }
 
-    // Paksa refresh halaman agar App.tsx mendeteksi profil baru
+    // Tunggu sebentar agar penulisan selesai sebelum reload
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     window.location.reload();
   };
 
   const handleAuthError = (err: any) => {
-    console.error("Detail Error Firebase:", err);
+    console.error("Detail Error:", err);
     let msg = err.message || "Terjadi kesalahan.";
     const fullMsg = msg.toLowerCase();
 
     if (fullMsg.includes("permission") || fullMsg.includes("insufficient")) {
-      msg = "Akses Firestore Ditolak! Pastikan Bapak sudah klik 'PUBLISH' di tab Rules Firestore di Firebase Console.";
+      msg = "Izin Firestore Bermasalah! Mohon Bapak cek tab 'Rules' di Firebase Console. Pastikan aturan 'allow read, write: if request.auth != null;' sudah dipublikasikan.";
     } else if (fullMsg.includes("auth/email-already-in-use")) {
-      msg = "Email ini sudah terdaftar. Bapak sudah punya akun, silakan klik 'Masuk' saja di paling bawah.";
+      msg = "Email sudah terdaftar. Silakan Masuk (Login) saja.";
       setIsRegistering(false);
-    } else if (fullMsg.includes("auth/invalid-credential") || fullMsg.includes("auth/user-not-found") || fullMsg.includes("wrong-password")) {
-      msg = "Email atau Password Bapak sepertinya salah. Coba dicek pelan-pelan ya.";
-    } else if (fullMsg.includes("auth/too-many-requests")) {
-      msg = "Terlalu banyak mencoba login. Tunggu sebentar ya bro, nanti coba lagi.";
+    } else if (fullMsg.includes("auth/invalid-credential")) {
+      msg = "Email atau Password salah.";
     }
 
     setError(msg);
@@ -226,11 +244,11 @@ const Login: React.FC = () => {
                   Gabung Warung
                 </button>
               </div>
-              <Input label="Nama Lengkap Bapak" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+              <Input label="Nama Lengkap" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
               {isJoining ? (
-                <Input label="Warung ID" value={joinWarungId} onChange={(e) => setJoinWarungId(e.target.value.toUpperCase())} required />
+                <Input label="Warung ID (dari Owner)" value={joinWarungId} onChange={(e) => setJoinWarungId(e.target.value.toUpperCase())} placeholder="WRG-XXXXXX" required />
               ) : (
-                <Input label="Nama Warung Bapak" value={storeName} onChange={(e) => setStoreName(e.target.value)} required />
+                <Input label="Nama Warung Baru" value={storeName} onChange={(e) => setStoreName(e.target.value)} required />
               )}
             </>
           )}
