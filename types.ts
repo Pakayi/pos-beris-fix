@@ -1,4 +1,3 @@
-
 export interface ProductUnit {
   name: string; // e.g., "Pcs", "Slop", "Karton"
   conversion: number; // Multiplier relative to base unit (e.g., 1, 10, 100)
@@ -18,14 +17,14 @@ export interface Product {
   updatedAt: number;
 }
 
-export type CustomerTier = 'Bronze' | 'Silver' | 'Gold';
+export type CustomerTier = "Bronze" | "Silver" | "Gold";
 
 export interface Customer {
   id: string;
   name: string;
   phone: string;
   tier: CustomerTier;
-  totalSpent: number; // Track total spending for future tier upgrades logic
+  totalSpent: number;
   joinedAt: number;
 }
 
@@ -33,8 +32,8 @@ export interface CartItem {
   productId: string;
   productName: string;
   unitName: string;
-  price: number; // Selling Price at time of transaction
-  buyPrice: number; // Cost Price at time of transaction
+  price: number;
+  buyPrice: number;
   quantity: number;
   conversion: number;
 }
@@ -44,21 +43,13 @@ export interface Transaction {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  paymentMethod: 'cash' | 'qris';
+  paymentMethod: "cash" | "qris";
   cashPaid: number;
   change: number;
   note?: string;
-  
-  // New fields for Customer & Discount
   customerId?: string;
   customerName?: string;
-  discountAmount?: number; // Total discount in Rp
-}
-
-export interface Category {
-  id: string;
-  name: string;
-  
+  discountAmount?: number;
 }
 
 export interface AppSettings {
@@ -66,14 +57,12 @@ export interface AppSettings {
   storeAddress: string;
   storePhone: string;
   enableTax: boolean;
-  taxRate: number; // Percentage
+  taxRate: number;
   footerMessage: string;
   showLogo: boolean;
-  logoUrl?: string | null; // Base64 image string
+  logoUrl?: string | null;
   securityPin: string | null;
-  printerName?: string | null; // For UI display only
-  
-  // Loyalty Settings
+  printerName?: string | null;
   tierDiscounts: {
     bronze: number;
     silver: number;
@@ -81,12 +70,33 @@ export interface AppSettings {
   };
 }
 
+// --- NEW MULTI-TENANT TYPES ---
+export type UserRole = "owner" | "cashier" | "admin";
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  warungId: string;
+  role: UserRole;
+  active: boolean;
+}
+
+export interface Warung {
+  id: string;
+  name: string;
+  ownerUid: string;
+  status: "active" | "suspended";
+  plan: "free" | "pro";
+  createdAt: number;
+}
+
 export enum AppRoute {
-  DASHBOARD = 'dashboard',
-  POS = 'pos',
-  PRODUCTS = 'products',
-  CUSTOMERS = 'customers',
-  INVENTORY = 'inventory',
-  REPORTS = 'reports',
-  SETTINGS = 'settings'
+  DASHBOARD = "dashboard",
+  POS = "pos",
+  PRODUCTS = "products",
+  CUSTOMERS = "customers",
+  INVENTORY = "inventory",
+  REPORTS = "reports",
+  SETTINGS = "settings",
 }

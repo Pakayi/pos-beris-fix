@@ -4,11 +4,16 @@ import { Product, ProductUnit } from "../types";
 import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
-const Products: React.FC = () => {
+interface ProductsProps {
+  role: "owner" | "cashier";
+}
+
+const Products: React.FC<ProductsProps> = ({ role }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const isOwner = role === "owner";
 
   // Scanner State
   const [showScanner, setShowScanner] = useState(false);
@@ -20,13 +25,11 @@ const Products: React.FC = () => {
     refreshProducts();
   }, []);
 
-  // AUTO-START SCANNER FOR SKU
   useEffect(() => {
     if (showScanner) {
       setCameraError(null);
       const timer = setTimeout(async () => {
         try {
-          // FIX: Added 'verbose: false' to satisfy Html5QrcodeFullConfig requirement
           const html5QrCode = new Html5Qrcode("product-scanner", {
             formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_128],
             verbose: false,
@@ -146,15 +149,17 @@ const Products: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-800">Manajemen Produk</h1>
-        <Button
-          onClick={() => {
-            setEditingProduct({ units: [{ name: "Pcs", conversion: 1, price: 0, buyPrice: 0 }], stock: "", minStockAlert: "" });
-            setIsModalOpen(true);
-          }}
-          icon="fa-plus"
-        >
-          Tambah Produk
-        </Button>
+        {isOwner && (
+          <Button
+            onClick={() => {
+              setEditingProduct({ units: [{ name: "Pcs", conversion: 1, price: 0, buyPrice: 0 }], stock: "", minStockAlert: "" });
+              setIsModalOpen(true);
+            }}
+            icon="fa-plus"
+          >
+            Tambah Produk
+          </Button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -169,7 +174,7 @@ const Products: React.FC = () => {
                 <th className="px-4 py-3">Kategori</th>
                 <th className="px-4 py-3 text-right">Stok</th>
                 <th className="px-4 py-3">Satuan & Harga</th>
-                <th className="px-4 py-3 text-center">Aksi</th>
+                {isOwner && <th className="px-4 py-3 text-center">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -197,24 +202,26 @@ const Products: React.FC = () => {
                       {product.units.map((u, i) => (
                         <div key={i} className="text-[11px] font-semibold text-blue-600 uppercase">
                           {u.name}: Rp {u.price.toLocaleString("id-ID")}
-                          <span className="text-gray-400 font-normal ml-1">(M: {u.buyPrice?.toLocaleString("id-ID") || "0"})</span>
+                          {isOwner && <span className="text-gray-400 font-normal ml-1">(M: {u.buyPrice?.toLocaleString("id-ID") || "0"})</span>}
                         </div>
                       ))}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => {
-                          setEditingProduct(product);
-                          setIsModalOpen(true);
-                        }}
-                        className="p-2 text-blue-600"
-                      >
-                        <i className="fa-solid fa-pen"></i>
-                      </button>
-                      <button onClick={() => handleDelete(product.id)} className="p-2 text-red-600">
-                        <i className="fa-solid fa-trash"></i>
-                      </button>
-                    </td>
+                    {isOwner && (
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => {
+                            setEditingProduct(product);
+                            setIsModalOpen(true);
+                          }}
+                          className="p-2 text-blue-600"
+                        >
+                          <i className="fa-solid fa-pen"></i>
+                        </button>
+                        <button onClick={() => handleDelete(product.id)} className="p-2 text-red-600">
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
