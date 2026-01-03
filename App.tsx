@@ -12,7 +12,7 @@ import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
 import { auth, db_fs } from "./services/firebase";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { OfflineIndicator, Button, Card } from "./components/UI";
 import { UserProfile, Warung } from "./types";
 
@@ -45,9 +45,24 @@ const App: React.FC = () => {
           }
 
           // Cek status warung & trial
-          const warungSnap = await getDoc(doc(db_fs, "warungs", fetchedProfile.warungId));
+          const warungRef = doc(db_fs, "warungs", fetchedProfile.warungId);
+          const warungSnap = await getDoc(warungRef);
+
           if (warungSnap.exists()) {
-            const wData = warungSnap.data() as Warung;
+            let wData = warungSnap.data() as Warung;
+
+            // --- AUTO MIGRATION LOGIC ---
+            // Jika akun lama tidak punya trialEndsAt, kita buatkan otomatis (30 hari dari sekarang/createdAt)
+            if (wData.plan === "free" && !wData.trialEndsAt) {
+              const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+              const newTrialDate = (wData.createdAt || Date.now()) + thirtyDays;
+
+              await updateDoc(warungRef, { trialEndsAt: newTrialDate });
+              wData.trialEndsAt = newTrialDate;
+              console.log("Database Updated: Trial date assigned to legacy account.");
+            }
+            // ----------------------------
+
             setWarung(wData);
           }
 
