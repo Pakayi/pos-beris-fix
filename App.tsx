@@ -11,7 +11,9 @@ import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
 import { auth, db_fs } from "./services/firebase";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
+// Fixed: Separated type import for User and corrected modular function imports
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import type { User } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { OfflineIndicator, Button, Card } from "./components/UI";
 import { UserProfile, Warung } from "./types";
@@ -34,7 +36,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setAuthUser(user);
+      setAuthUser(user as User | null);
       if (user) {
         const fetchedProfile = await db.getUserProfile(user.uid);
         if (fetchedProfile) {

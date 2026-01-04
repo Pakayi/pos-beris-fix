@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { auth, db_fs } from "../services/firebase";
+// Fixed: Using modular Firebase Auth imports correctly
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { Button, Input, Card } from "../components/UI";
