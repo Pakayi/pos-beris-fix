@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-// Fixed: Ensure getAuth is imported correctly from the modular SDK
+// Fix: Correct modular import for getAuth
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableIndexedDbPersistence, terminate } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
 // Kunci ini KHUSUS untuk Firebase, jangan dicampur dengan process.env.API_KEY (Gemini)
 const firebaseConfig = {

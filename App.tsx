@@ -11,9 +11,8 @@ import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
 import { auth, db_fs } from "./services/firebase";
-// Fixed: Separated type import for User and corrected modular function imports
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import type { User } from "firebase/auth";
+// Fix: Correct modular imports for Auth functions and types
+import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { OfflineIndicator, Button, Card } from "./components/UI";
 import { UserProfile, Warung } from "./types";

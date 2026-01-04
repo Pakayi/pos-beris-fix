@@ -157,6 +157,18 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
     refreshProducts();
   };
 
+  const addUnitField = () => {
+    const units = [...(editingProduct.units || [])];
+    units.push({ name: "", conversion: 1, price: 0, buyPrice: 0 });
+    setEditingProduct({ ...editingProduct, units });
+  };
+
+  const removeUnitField = (idx: number) => {
+    if (idx === 0) return; // Dasar tidak boleh dihapus
+    const units = editingProduct.units.filter((_: any, i: number) => i !== idx);
+    setEditingProduct({ ...editingProduct, units });
+  };
+
   const filtered = products.filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
@@ -362,7 +374,12 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
               <label className="text-xs font-bold text-gray-400 uppercase">Harga & Satuan Jual</label>
             </div>
             {editingProduct.units?.map((unit: any, idx: number) => (
-              <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3">
+              <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3 relative">
+                {idx > 0 && (
+                  <button onClick={() => removeUnitField(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600">
+                    <i className="fa-solid fa-trash-can"></i>
+                  </button>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <Input
                     label="Nama Satuan"
@@ -372,6 +389,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                       u[idx].name = e.target.value;
                       setEditingProduct({ ...editingProduct, units: u });
                     }}
+                    placeholder="Pcs/Dus/Pak"
                   />
                   <Input
                     label="Isi (Konversi)"
@@ -413,8 +431,11 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                 </div>
               </div>
             ))}
+            <button onClick={addUnitField} className="w-full py-3 border-2 border-dashed border-blue-200 rounded-xl text-blue-600 hover:bg-blue-50 text-sm font-bold transition-all">
+              <i className="fa-solid fa-plus-circle mr-2"></i> Tambah Satuan Jual (Grosir/Multi)
+            </button>
           </div>
-          <Button className="w-full py-3" onClick={handleSave}>
+          <Button className="w-full py-3 mt-4" onClick={handleSave}>
             Simpan Produk
           </Button>
         </div>
