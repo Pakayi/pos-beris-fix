@@ -52,7 +52,6 @@ const App: React.FC = () => {
             let wData = warungSnap.data() as Warung;
 
             // --- AUTO MIGRATION LOGIC ---
-            // Jika akun lama tidak punya trialEndsAt, kita buatkan otomatis (30 hari dari sekarang/createdAt)
             if (wData.plan === "free" && !wData.trialEndsAt) {
               const thirtyDays = 30 * 24 * 60 * 60 * 1000;
               const newTrialDate = (wData.createdAt || Date.now()) + thirtyDays;
@@ -99,7 +98,6 @@ const App: React.FC = () => {
     );
   }
 
-  // LOGIKA BLOKIR TRIAL HABIS
   const isExpired = warung?.plan === "free" && warung?.trialEndsAt && warung.trialEndsAt < Date.now();
   if (isExpired && profile.role === "owner") {
     return (
@@ -180,7 +178,9 @@ const Layout: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       <aside className={`fixed lg:static inset-y-0 left-0 z-30 bg-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col ${isSidebarOpen ? "w-64 translate-x-0" : isMobile ? "-translate-x-full w-64" : "w-20"}`}>
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800">
           <div className={`flex items-center gap-2 overflow-hidden ${!isSidebarOpen && !isMobile ? "hidden" : ""}`}>
-            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg text-white">{appSettings.storeName ? appSettings.storeName.charAt(0).toUpperCase() : "W"}</div>
+            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg text-white overflow-hidden shrink-0">
+              {appSettings.logoUrl && appSettings.showLogo ? <img src={appSettings.logoUrl} alt="Logo" className="w-full h-full object-cover" /> : appSettings.storeName ? appSettings.storeName.charAt(0).toUpperCase() : "W"}
+            </div>
             <span className="font-bold text-lg tracking-tight truncate">{appSettings.storeName || "Warung POS"}</span>
           </div>
           {!isMobile && (
