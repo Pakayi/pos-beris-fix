@@ -1,6 +1,6 @@
 import { Product, Transaction, AppSettings, Customer, UserProfile, StockLog } from "../types";
 import { db_fs, auth } from "./firebase";
-import { doc, setDoc, collection, deleteDoc, onSnapshot, getDoc, query, where, getDocs, updateDoc, orderBy, limit } from "firebase/firestore";
+import { doc, setDoc, collection, deleteDoc, onSnapshot, getDoc, query, where, getDocs, updateDoc, orderBy, limit, writeBatch } from "firebase/firestore";
 
 const STORAGE_KEYS = {
   PRODUCTS: "warung_products",
@@ -180,6 +180,36 @@ class DBService {
       if (log) await this.saveStockLog(log);
     } catch (e) {
       console.error(e);
+    }
+  }
+
+  async bulkSaveProducts(newProducts: Product[]): Promise<void> {
+    if (!this.activeWarungId || newProducts.length === 0) return;
+
+    // Update Local Storage
+    const products = this.getProducts();
+    newProducts.forEach((np) => {
+      const idx = products.findIndex((p) => p.id === np.id || (p.sku && p.sku === np.sku));
+      if (idx >= 0) products[idx] = { ...products[idx], ...np, updatedAt: Date.now() };
+      else products.push({ ...np, updatedAt: Date.now() });
+    });
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+
+    // Update Firestore in Batches (max 500 per batch)
+    try {
+      for (let i = 0; i < newProducts.length; i += 500) {
+        const batch = writeBatch(db_fs);
+        const chunk = newProducts.slice(i, i + 500);
+        chunk.forEach((p) => {
+          const ref = doc(db_fs, `warungs/${this.activeWarungId}/products`, p.id);
+          batch.set(ref, this.sanitizeForFirestore(p));
+        });
+        await batch.commit();
+      }
+      window.dispatchEvent(new Event("products-updated"));
+    } catch (e) {
+      console.error("Bulk Save Error:", e);
+      throw e;
     }
   }
 

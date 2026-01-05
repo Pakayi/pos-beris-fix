@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "../services/db";
-import { Product, ProductUnit, StockLog, StockLogType, UserRole } from "../types";
+import { Product, ProductUnit, StockLog, UserRole } from "../types";
 import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
@@ -22,6 +22,14 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   });
   const [searchTerm, setSearchTerm] = useState("");
   const isOwner = role === "owner";
+
+  // Import State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
+  const [csvData, setCsvData] = useState<any[]>([]);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [isImporting, setIsImporting] = useState(false);
 
   // Scanner State
   const [showScanner, setShowScanner] = useState(false);
@@ -75,17 +83,156 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
   const handleExportCSV = () => {
     if (!isOwner) return;
-    let csv = "ID,SKU,Nama,Kategori,Stok,Satuan Dasar,Harga Jual Dasar,Harga Modal Dasar\n";
+    // Enhanced CSV Export with Multi-Unit support as separate columns
+    let csv = "SKU,Nama,Kategori,Stok,Satuan_Dasar,Harga_Modal_Dasar,Harga_Jual_Dasar,Satuan_2,Konversi_2,Modal_2,Jual_2,Satuan_3,Konversi_3,Modal_3,Jual_3\n";
     products.forEach((p) => {
-      const baseUnit = p.units.find((u) => u.conversion === 1) || p.units[0];
-      csv += `${p.id},${p.sku},"${p.name}","${p.category}",${p.stock},${p.baseUnit},${baseUnit.price},${baseUnit.buyPrice}\n`;
+      const units = p.units || [];
+      const u1 = units.find((u) => u.conversion === 1) || { name: p.baseUnit, price: 0, buyPrice: 0, conversion: 1 };
+      const u2 = units.length > 1 ? units.find((u) => u.conversion !== 1) : null;
+      const u3 = units.length > 2 ? units.filter((u) => u.conversion !== 1)[1] : null;
+
+      const row = [
+        p.sku || "",
+        `"${p.name}"`,
+        `"${p.category}"`,
+        p.stock,
+        u1.name,
+        u1.buyPrice,
+        u1.price,
+        u2 ? u2.name : "",
+        u2 ? u2.conversion : "",
+        u2 ? u2.buyPrice : "",
+        u2 ? u2.price : "",
+        u3 ? u3.name : "",
+        u3 ? u3.conversion : "",
+        u3 ? u3.buyPrice : "",
+        u3 ? u3.price : "",
+      ];
+      csv += row.join(",") + "\n";
     });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `daftar-produk-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `beris-pos-produk-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      parseCSV(text);
+    };
+    reader.readAsText(file);
+  };
+
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+    if (lines.length === 0) return;
+
+    // Simple CSV parser that handles quotes
+    const parseLine = (line: string) => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') inQuotes = !inQuotes;
+        else if (char === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else current += char;
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const headers = parseLine(lines[0]);
+    const data = lines.slice(1).map(parseLine);
+
+    setCsvHeaders(headers);
+    setCsvData(data);
+
+    // Auto-mapping logic
+    const initialMapping: Record<string, string> = {};
+    const fieldSuggestions: Record<string, string[]> = {
+      name: ["nama", "name", "barang", "produk", "item", "product"],
+      sku: ["sku", "barcode", "kode", "code"],
+      price: ["harga", "jual", "toko", "price", "sell"],
+      buyPrice: ["modal", "beli", "buy", "cogs"],
+      stock: ["stok", "jumlah", "stock", "qty"],
+      category: ["kategori", "category", "golongan", "group"],
+      baseUnit: ["satuan", "unit", "uom"],
+    };
+
+    Object.keys(fieldSuggestions).forEach((field) => {
+      const found = headers.find((h) => fieldSuggestions[field].some((s) => h.toLowerCase().includes(s.toLowerCase())));
+      if (found) initialMapping[field] = found;
+    });
+
+    setMapping(initialMapping);
+    setImportStep(2);
+  };
+
+  const executeImport = async () => {
+    if (!mapping.name) {
+      alert("Minimal kolom 'Nama Produk' harus dipilih.");
+      return;
+    }
+
+    setIsImporting(true);
+    const newProducts: Product[] = csvData
+      .map((row, idx) => {
+        const getVal = (field: string) => {
+          const header = mapping[field];
+          if (!header) return "";
+          const colIdx = csvHeaders.indexOf(header);
+          return row[colIdx] || "";
+        };
+
+        const name = getVal("name");
+        if (!name) return null;
+
+        const baseUnit = getVal("baseUnit") || "Pcs";
+        const buyPrice = Number(getVal("buyPrice")) || 0;
+        const price = Number(getVal("price")) || 0;
+
+        return {
+          id: `P-IMP-${Date.now()}-${idx}`,
+          name,
+          sku: getVal("sku"),
+          category: getVal("category") || "Umum",
+          baseUnit,
+          stock: Number(getVal("stock")) || 0,
+          minStockAlert: 5,
+          units: [
+            {
+              name: baseUnit,
+              conversion: 1,
+              price,
+              buyPrice,
+            },
+          ],
+          updatedAt: Date.now(),
+        };
+      })
+      .filter((p) => p !== null) as Product[];
+
+    try {
+      await db.bulkSaveProducts(newProducts);
+      setIsImportModalOpen(false);
+      refreshProducts();
+      alert(`Berhasil mengimpor ${newProducts.length} produk!`);
+    } catch (e) {
+      alert("Gagal mengimpor data. Pastikan format benar.");
+    } finally {
+      setIsImporting(false);
+      setImportStep(1);
+    }
   };
 
   const handleSave = () => {
@@ -102,25 +249,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       updatedAt: Date.now(),
     };
 
-    let log: StockLog | undefined;
-    if (!editingProduct.id && productToSave.stock > 0) {
-      log = {
-        id: `LOG-INIT-${Date.now()}`,
-        productId: productToSave.id,
-        productName: productToSave.name,
-        type: "IN",
-        logType: "INITIAL",
-        quantity: productToSave.stock,
-        unitName: productToSave.baseUnit,
-        previousStock: 0,
-        currentStock: productToSave.stock,
-        reason: "Stok awal produk baru",
-        operatorName: "System",
-        timestamp: Date.now(),
-      };
-    }
-
-    db.saveProduct(productToSave, log);
+    db.saveProduct(productToSave);
     setIsModalOpen(false);
     refreshProducts();
   };
@@ -164,7 +293,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   };
 
   const removeUnitField = (idx: number) => {
-    if (idx === 0) return; // Dasar tidak boleh dihapus
+    if (idx === 0) return;
     const units = editingProduct.units.filter((_: any, i: number) => i !== idx);
     setEditingProduct({ ...editingProduct, units });
   };
@@ -181,8 +310,18 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
         <div className="flex gap-2">
           {isOwner && (
             <>
-              <Button onClick={handleExportCSV} variant="outline" icon="fa-file-csv">
-                Export CSV
+              <Button
+                onClick={() => {
+                  setImportStep(1);
+                  setIsImportModalOpen(true);
+                }}
+                variant="secondary"
+                icon="fa-file-import"
+              >
+                Import
+              </Button>
+              <Button onClick={handleExportCSV} variant="outline" icon="fa-file-excel">
+                Export
               </Button>
               <Button
                 onClick={() => {
@@ -284,6 +423,100 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           </table>
         </div>
       </div>
+
+      {/* Modal Import */}
+      <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Import Data Produk">
+        {importStep === 1 && (
+          <div className="space-y-6">
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative">
+              <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                <i className="fa-solid fa-file-csv"></i>
+              </div>
+              <h4 className="font-bold text-slate-900">Pilih File CSV</h4>
+              <p className="text-xs text-slate-500 mt-1">Upload file export dari aplikasi lama Anda</p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-[11px] text-blue-700 leading-relaxed">
+              <p className="font-bold mb-1 uppercase tracking-wider">💡 Tips Beris POS</p>
+              Kami mendukung import cerdas. Anda tidak perlu mengubah kolom Excel Anda. Cukup upload, nanti kita cocokkan bersama di langkah berikutnya.
+            </div>
+          </div>
+        )}
+
+        {importStep === 2 && (
+          <div className="space-y-4">
+            <p className="text-xs font-bold text-slate-500 uppercase">Cocokkan Kolom Anda</p>
+            <div className="space-y-3">
+              {[
+                { id: "name", label: "Nama Produk", required: true },
+                { id: "sku", label: "Barcode / SKU", required: false },
+                { id: "price", label: "Harga Jual Dasar", required: false },
+                { id: "buyPrice", label: "Harga Modal", required: false },
+                { id: "stock", label: "Stok Saat Ini", required: false },
+                { id: "category", label: "Kategori", required: false },
+                { id: "baseUnit", label: "Satuan Dasar", required: false },
+              ].map((field) => (
+                <div key={field.id} className="flex items-center gap-3 bg-white p-2 border rounded-lg">
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-slate-800">
+                      {field.label} {field.required && <span className="text-red-500">*</span>}
+                    </p>
+                  </div>
+                  <select className="flex-1 text-xs border rounded p-1 bg-slate-50" value={mapping[field.id] || ""} onChange={(e) => setMapping({ ...mapping, [field.id]: e.target.value })}>
+                    <option value="">-- Lewati --</option>
+                    {csvHeaders.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="pt-4 flex gap-2">
+              <Button variant="secondary" className="flex-1" onClick={() => setImportStep(1)}>
+                Kembali
+              </Button>
+              <Button className="flex-1" onClick={() => setImportStep(3)} disabled={!mapping.name}>
+                Lanjut
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {importStep === 3 && (
+          <div className="space-y-6 text-center">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+              <i className="fa-solid fa-check-double"></i>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">Siap Impor!</h3>
+              <p className="text-sm text-slate-500">
+                Ada <b>{csvData.length}</b> barang ditemukan dalam file Anda.
+              </p>
+            </div>
+            <div className="p-4 bg-slate-50 border rounded-xl text-left">
+              <p className="text-xs font-bold text-slate-400 mb-2 uppercase">Preview Data</p>
+              <div className="space-y-1 max-h-32 overflow-y-auto pr-2 no-scrollbar">
+                {csvData.slice(0, 5).map((row, i) => (
+                  <div key={i} className="text-xs text-slate-700 py-1 border-b border-slate-100 truncate">
+                    {row[csvHeaders.indexOf(mapping.name)]}
+                  </div>
+                ))}
+                {csvData.length > 5 && <p className="text-[10px] text-slate-400 mt-1">...dan {csvData.length - 5} barang lainnya.</p>}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" className="flex-1" onClick={() => setImportStep(2)} disabled={isImporting}>
+                Batal
+              </Button>
+              <Button className="flex-1" onClick={executeImport} disabled={isImporting}>
+                {isImporting ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : "Mulai Impor Sekarang"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal Update Stok */}
       <Modal isOpen={isStockModalOpen} onClose={() => setIsStockModalOpen(false)} title="Update Stok Barang">
