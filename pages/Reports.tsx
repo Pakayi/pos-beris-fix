@@ -28,7 +28,6 @@ const Reports: React.FC = () => {
     setSettings(db.getSettings());
   }, []);
 
-  // Filter Data based on Range
   useEffect(() => {
     const now = new Date();
     let startDate = 0;
@@ -77,32 +76,12 @@ const Reports: React.FC = () => {
       });
     });
 
-    const productList = db.getProducts();
-    const productCatMap = new Map(productList.map((p) => [p.name, p.category]));
-
-    filteredTx.forEach((t) => {
-      t.items.forEach((item) => {
-        const cat = productCatMap.get(item.productName) || "Lainnya";
-        categoryMap.set(cat, (categoryMap.get(cat) || 0) + item.price * item.quantity);
-      });
-    });
-
     const topProducts = Array.from(productMap.values())
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);
 
-    const categoryData = Array.from(categoryMap.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-
-    return {
-      totalRevenue,
-      totalProfit,
-      totalTransactions,
-      topProducts,
-      categoryData,
-    };
-  }, [filteredTx, products]);
+    return { totalRevenue, totalProfit, totalTransactions, topProducts };
+  }, [filteredTx]);
 
   const formatRp = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
@@ -114,40 +93,43 @@ const Reports: React.FC = () => {
     setAiError(null);
 
     try {
-      // 1. Check for API Key selection (Standard for AI Studio environments)
-      if (typeof window !== "undefined" && (window as any).aistudio) {
-        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-        if (!hasKey) {
-          await (window as any).aistudio.openSelectKey();
-          // After selecting, proceed. The key is injected to process.env.API_KEY automatically.
+      // 1. Check for AI Studio Key Selection Capability
+      const aistudio = (window as any).aistudio;
+      if (aistudio) {
+        const hasKey = await aistudio.hasSelectedApiKey();
+        // Jika di browser tidak ada key, atau process.env.API_KEY kosong, buka selector
+        if (!hasKey || !process.env.API_KEY) {
+          await aistudio.openSelectKey();
         }
       }
 
+      // 2. Initialize Gemini right before calling
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Anda adalah 'Cak Warung', konsultan bisnis gaul dan ahli untuk warung kelontong di Indonesia.
-Berdasarkan data warung saya untuk periode (${range === "today" ? "Hari Ini" : range === "week" ? "Seminggu Terakhir" : "Bulan Ini"}):
-- Total Omzet: ${formatRp(stats.totalRevenue)}
-- Estimasi Keuntungan: ${formatRp(stats.totalProfit)}
-- Jumlah Transaksi: ${stats.totalTransactions}
-- Produk Terlaris: ${stats.topProducts.map((p) => `${p.name} (${p.qty} terjual)`).join(", ")}
+Berdasarkan data warung saya periode ${range === "today" ? "Hari Ini" : range === "week" ? "Seminggu Terakhir" : "Bulan Ini"}:
+- Omzet: ${formatRp(stats.totalRevenue)}
+- Untung: ${formatRp(stats.totalProfit)}
+- Transaksi: ${stats.totalTransactions}
+- Terlaris: ${stats.topProducts.map((p) => p.name).join(", ")}
 
-Berikan 3 saran bisnis yang sangat konkret, singkat, dan pakai bahasa santai tapi profesional (ala pengusaha UMKM sukses). Fokus pada stok, harga, dan tips biar pelanggan balik lagi. Gunakan bullet points.`;
+Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesia gaul pengusaha. Pakai bullet points.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
       });
 
-      setAiResponse(response.text || "Waduh, saya lagi buntu ide nih. Coba tanya lagi nanti ya!");
+      if (!response.text) throw new Error("Kosong");
+      setAiResponse(response.text);
     } catch (e: any) {
-      console.error(e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY")) {
-        setAiError("Kunci API tidak valid atau belum diset. Silakan pilih ulang kunci API Anda.");
-        if (typeof window !== "undefined" && (window as any).aistudio) {
-          await (window as any).aistudio.openSelectKey();
-        }
+      console.error("Gemini Error:", e);
+      // Handle race conditions or invalid keys
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API key")) {
+        setAiError("Kunci API bermasalah. Silakan klik 'Pilih Kunci' untuk memperbarui.");
+        const aistudio = (window as any).aistudio;
+        if (aistudio) await aistudio.openSelectKey();
       } else {
-        setAiError("Gagal terhubung ke otak AI. Cek koneksi internetmu atau coba lagi nanti, Bro.");
+        setAiError("Gagal terhubung. Pastikan internet lancar dan kunci API sudah benar di Vercel, lalu coba lagi.");
       }
     } finally {
       setAiLoading(false);
@@ -158,95 +140,32 @@ Berikan 3 saran bisnis yang sangat konkret, singkat, dan pakai bahasa santai tap
     setIsProcessing(true);
     try {
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const rangeText = range === "today" ? "Hari Ini" : range === "week" ? "7 Hari Terakhir" : range === "month" ? "Bulan Ini" : "Semua Waktu";
-
-      doc.setFontSize(22);
-      doc.setTextColor(15, 23, 42);
-      doc.text(settings.storeName, 14, 20);
-
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Laporan Bisnis - Periode: ${rangeText}`, 14, 28);
-      doc.text(`Dicetak pada: ${new Date().toLocaleString("id-ID")}`, 14, 33);
-
-      doc.setLineWidth(0.5);
-      doc.setDrawColor(226, 232, 240);
-      doc.line(14, 38, pageWidth - 14, 38);
-
+      doc.setFontSize(20);
+      doc.text(`Laporan ${settings.storeName}`, 14, 20);
       doc.setFontSize(12);
-      doc.setTextColor(15, 23, 42);
-      doc.text("RINGKASAN PERFORMA", 14, 50);
-
-      const summaryY = 58;
-      doc.setFillColor(248, 250, 252);
-      doc.roundedRect(14, summaryY, pageWidth - 28, 40, 3, 3, "F");
-
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text("Total Omzet:", 20, summaryY + 12);
-      doc.text("Total Transaksi:", 20, summaryY + 22);
-      doc.text("Keuntungan Bersih:", 20, summaryY + 32);
-
-      doc.setFontSize(11);
-      doc.setTextColor(30, 41, 59);
-      doc.text(formatRp(stats.totalRevenue), 70, summaryY + 12);
-      doc.text(stats.totalTransactions.toString(), 70, summaryY + 22);
-      doc.setTextColor(16, 185, 129);
-      doc.text(formatRp(stats.totalProfit), 70, summaryY + 32);
-
-      let tableY = 125;
-      doc.setFillColor(241, 245, 249);
-      doc.rect(14, tableY, pageWidth - 28, 8, "F");
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text("No", 18, tableY + 6);
-      doc.text("Nama Produk", 30, tableY + 6);
-      doc.text("Terjual", 120, tableY + 6);
-      doc.text("Omzet", pageWidth - 20, tableY + 6, { align: "right" });
-
-      doc.setFont("helvetica", "normal");
-      tableY += 8;
-      stats.topProducts.forEach((p, i) => {
-        doc.text((i + 1).toString(), 18, tableY + 7);
-        doc.text(p.name, 30, tableY + 7);
-        doc.text(p.qty.toString(), 120, tableY + 7);
-        doc.text(formatRp(p.revenue), pageWidth - 20, tableY + 7, { align: "right" });
-        doc.setDrawColor(241, 245, 249);
-        doc.line(14, tableY + 10, pageWidth - 14, tableY + 10);
-        tableY += 10;
-      });
-
-      doc.save(`Laporan_${settings.storeName.replace(/\s+/g, "_")}_${range}.pdf`);
+      doc.text(`Omzet: ${formatRp(stats.totalRevenue)}`, 14, 35);
+      doc.text(`Untung: ${formatRp(stats.totalProfit)}`, 14, 45);
+      doc.save(`Laporan_${range}.pdf`);
     } catch (e) {
-      console.error(e);
-      alert("Gagal mencetak PDF");
+      alert("Gagal cetak PDF");
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleExportExcel = () => {
-    setIsProcessing(true);
-    try {
-      const headers = ["Waktu", "ID Transaksi", "Pelanggan", "Total Belanja", "Potongan Diskon", "Metode Pembayaran"];
-      const rows = filteredTx.map((t) => [new Date(t.timestamp).toLocaleString("id-ID"), t.id, t.customerName || "Umum", t.totalAmount.toString(), (t.discountAmount || 0).toString(), t.paymentMethod.toUpperCase()]);
-
-      let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map((e) => e.join(",")).join("\n");
-
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Data_Transaksi_${range}_${new Date().getTime()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      console.error(e);
-      alert("Gagal ekspor data");
-    } finally {
-      setIsProcessing(false);
-    }
+    const headers = ["ID", "Waktu", "Total"];
+    const rows = filteredTx.map((t) => [t.id, new Date(t.timestamp).toLocaleString(), t.totalAmount]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.setAttribute("hidden", "");
+    a.setAttribute("href", url);
+    a.setAttribute("download", `transaksi_${range}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
@@ -314,14 +233,13 @@ Berikan 3 saran bisnis yang sangat konkret, singkat, dan pakai bahasa santai tap
             <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-circle-notch fa-spin" : "fa-file-pdf"}>
               {isProcessing ? "Memproses..." : "Cetak PDF"}
             </Button>
-            <Button onClick={handleExportExcel} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-circle-notch fa-spin" : "fa-file-excel"}>
-              {isProcessing ? "Memproses..." : "Ekspor Excel"}
+            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-file-excel">
+              Ekspor Excel
             </Button>
           </Card>
         </div>
       </div>
 
-      {/* AI Modal */}
       <Modal
         isOpen={showAIModal}
         onClose={() => setShowAIModal(false)}
@@ -333,30 +251,30 @@ Berikan 3 saran bisnis yang sangat konkret, singkat, dan pakai bahasa santai tap
         }
       >
         <div className="space-y-4">
-          <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-inner">
+          <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-inner min-h-[150px]">
             <div className="flex items-center gap-3 mb-4 text-indigo-700">
               <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg">
                 <i className={`fa-solid ${aiLoading ? "fa-spinner fa-spin" : "fa-robot"}`}></i>
               </div>
               <div>
                 <span className="font-black block leading-none">Cak Warung AI</span>
-                <span className="text-[10px] uppercase font-bold text-indigo-400">Status: {aiLoading ? "Sedang Berpikir..." : "Saran Tersedia"}</span>
+                <span className="text-[10px] uppercase font-bold text-indigo-400">{aiLoading ? "Sedang Berpikir..." : "Analisis Selesai"}</span>
               </div>
             </div>
 
             {aiLoading ? (
-              <div className="flex flex-col items-center justify-center py-10 space-y-4">
+              <div className="flex flex-col items-center justify-center py-6 space-y-4">
                 <div className="flex gap-1">
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
                 </div>
-                <p className="text-xs text-indigo-600 font-medium italic">Sabar ya, lagi ngitung strategi paling cuan...</p>
+                <p className="text-xs text-indigo-600 font-medium italic">Bentar, lagi nerawang data warungmu...</p>
               </div>
             ) : aiError ? (
-              <div className="text-center py-6">
-                <i className="fa-solid fa-triangle-exclamation text-3xl text-amber-500 mb-2"></i>
-                <p className="text-sm text-slate-600 font-medium">{aiError}</p>
+              <div className="text-center py-4">
+                <i className="fa-solid fa-circle-exclamation text-2xl text-amber-500 mb-2"></i>
+                <p className="text-sm text-slate-600 px-4">{aiError}</p>
                 <Button size="sm" variant="outline" className="mt-4" onClick={handleAskAI}>
                   Coba Lagi
                 </Button>
@@ -365,7 +283,7 @@ Berikan 3 saran bisnis yang sangat konkret, singkat, dan pakai bahasa santai tap
               <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">{aiResponse}</div>
             )}
           </div>
-          <p className="text-[10px] text-slate-400 italic text-center px-4">*Saran dihasilkan otomatis oleh AI. Jangan lupa pakai insting dagang kamu juga ya, Bro!</p>
+          <p className="text-[10px] text-slate-400 italic text-center px-4">*Saran dihasilkan otomatis oleh AI Gemini.</p>
         </div>
       </Modal>
     </div>
