@@ -88,29 +88,6 @@ const App: React.FC = () => {
     );
   }
 
-  const isExpired = warung?.plan === "free" && warung?.trialEndsAt && warung.trialEndsAt < Date.now();
-  if (isExpired && profile.role === "owner") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6">
-        <Card className="max-w-md w-full p-8 text-center space-y-6 border-slate-800">
-          <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto text-4xl">
-            <i className="fa-solid fa-hourglass-end"></i>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Masa Percobaan Habis!</h1>
-            <p className="text-slate-500 mt-2">Akun warung Anda telah ditangguhkan karena masa percobaan 30 hari telah berakhir.</p>
-          </div>
-          <Button className="w-full py-4 font-bold text-lg" onClick={() => window.open("https://wa.me/628123456789", "_blank")}>
-            <i className="fa-brands fa-whatsapp mr-2"></i> Hubungi Admin
-          </Button>
-          <button onClick={() => signOut(auth)} className="text-slate-400 text-xs hover:underline">
-            Keluar Akun
-          </button>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <HashRouter>
       <Layout profile={profile} />
