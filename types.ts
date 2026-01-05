@@ -1,31 +1,32 @@
+
 export interface ProductUnit {
-  name: string;
-  conversion: number;
-  price: number;
-  buyPrice: number;
+  name: string; // e.g., "Pcs", "Slop", "Karton"
+  conversion: number; // Multiplier relative to base unit (e.g., 1, 10, 100)
+  price: number; // Selling price for this unit
+  buyPrice: number; // Cost of Goods Sold (Modal) per unit
 }
 
 export interface Product {
   id: string;
   name: string;
-  sku: string;
+  sku: string; // Barcode
   category: string;
-  baseUnit: string;
-  stock: number;
+  baseUnit: string; // The smallest unit (e.g., Pcs)
+  stock: number; // Stored in base units
   minStockAlert: number;
   units: ProductUnit[];
   updatedAt: number;
 }
 
-export type StockLogType = "SALE" | "RESTOCK" | "ADJUSTMENT" | "INITIAL";
+export type StockLogType = 'SALE' | 'RESTOCK' | 'ADJUSTMENT' | 'INITIAL';
 
 export interface StockLog {
   id: string;
   productId: string;
   productName: string;
-  type: "IN" | "OUT";
+  type: 'IN' | 'OUT';
   logType: StockLogType;
-  quantity: number;
+  quantity: number; // absolute value
   unitName: string;
   previousStock: number;
   currentStock: number;
@@ -34,7 +35,7 @@ export interface StockLog {
   timestamp: number;
 }
 
-export type CustomerTier = "Bronze" | "Silver" | "Gold";
+export type CustomerTier = 'Bronze' | 'Silver' | 'Gold';
 
 export interface Customer {
   id: string;
@@ -60,7 +61,7 @@ export interface Transaction {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  paymentMethod: "cash" | "qris";
+  paymentMethod: 'cash' | 'qris';
   cashPaid: number;
   change: number;
   note?: string;
@@ -87,7 +88,8 @@ export interface AppSettings {
   };
 }
 
-export type UserRole = "owner" | "cashier" | "admin";
+// --- NEW MULTI-TENANT TYPES ---
+export type UserRole = 'owner' | 'cashier' | 'admin';
 
 export interface UserProfile {
   uid: string;
@@ -102,18 +104,17 @@ export interface Warung {
   id: string;
   name: string;
   ownerUid: string;
-  status: "active" | "suspended";
-  plan: "free" | "pro";
+  status: 'active' | 'suspended';
+  plan: 'free' | 'pro';
   createdAt: number;
-  trialEndsAt?: number; // Tanggal akhir masa percobaan
 }
 
 export enum AppRoute {
-  DASHBOARD = "dashboard",
-  POS = "pos",
-  PRODUCTS = "products",
-  CUSTOMERS = "customers",
-  INVENTORY = "inventory",
-  REPORTS = "reports",
-  SETTINGS = "settings",
+  DASHBOARD = 'dashboard',
+  POS = 'pos',
+  PRODUCTS = 'products',
+  CUSTOMERS = 'customers',
+  INVENTORY = 'inventory',
+  REPORTS = 'reports',
+  SETTINGS = 'settings'
 }
