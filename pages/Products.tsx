@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "../services/db";
 import { Product, ProductUnit, StockLog, UserRole } from "../types";
 import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+
+// Direct URL Imports for stability
 // @ts-ignore
-import * as XLSX from "xlsx";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+// @ts-ignore
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "https://esm.sh/html5-qrcode@2.3.8";
 
 interface ProductsProps {
   role: UserRole;
@@ -34,7 +37,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
   const [showScanner, setShowScanner] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
+  const scannerInstanceRef = useRef<any>(null);
   const lastScanTimeRef = useRef<number>(0);
 
   useEffect(() => {
@@ -49,19 +52,16 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       setCameraError(null);
       const timer = setTimeout(async () => {
         try {
-          const html5QrCode = new Html5Qrcode("product-scanner", {
-            formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_128],
-            verbose: false,
-          });
+          const html5QrCode = new Html5Qrcode("product-scanner");
           scannerInstanceRef.current = html5QrCode;
           await html5QrCode.start(
             { facingMode: "environment" },
             { fps: 10, qrbox: { width: 250, height: 250 } },
-            (decodedText) => {
+            (decodedText: string) => {
               const now = Date.now();
               if (now - lastScanTimeRef.current < 1500) return;
               lastScanTimeRef.current = now;
-              setEditingProduct((prev) => ({ ...prev, sku: decodedText }));
+              setEditingProduct((prev: any) => ({ ...prev, sku: decodedText }));
               setShowScanner(false);
             },
             () => {}
@@ -98,10 +98,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
         KONVERSI_2: extraUnits[0]?.conversion || "",
         MODAL_2: extraUnits[0]?.buyPrice || "",
         JUAL_2: extraUnits[0]?.price || "",
-        SATUAN_3: extraUnits[1]?.name || "",
-        KONVERSI_3: extraUnits[1]?.conversion || "",
-        MODAL_3: extraUnits[1]?.buyPrice || "",
-        JUAL_3: extraUnits[1]?.price || "",
       };
     });
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -113,18 +109,24 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const data = new Uint8Array(event.target?.result as ArrayBuffer);
+      // XLSX.read secara otomatis mengenali .xls dan .xlsx
       const workbook = XLSX.read(data, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
       if (rows.length === 0) return;
+
       const headers = rows[0].map((h) => String(h).trim());
       const dataRows = rows.slice(1);
+
       setColumnHeaders(headers);
       setExcelRows(dataRows);
+
       const initialMapping: Record<string, string> = {};
       const fieldSuggestions: Record<string, string[]> = {
         name: ["nama", "name", "barang", "produk", "item", "product", "deskripsi", "NAMA"],
@@ -134,13 +136,13 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
         stock: ["stok", "jumlah", "stock", "qty", "balance", "STOK"],
         category: ["kategori", "category", "golongan", "group", "sub_kategori", "KATEGORI"],
         baseUnit: ["satuan", "unit", "uom", "satuan_1", "SATUAN_1"],
-        conversion2: ["isi", "konversi", "multiplier", "konversi_2", "ISI"],
-        unit2Name: ["satuan_2", "unit_2", "SATUAN_2"],
       };
+
       Object.keys(fieldSuggestions).forEach((field) => {
         const found = headers.find((h) => fieldSuggestions[field].some((s) => h.toLowerCase() === s.toLowerCase() || h.toLowerCase().includes(s.toLowerCase())));
         if (found) initialMapping[field] = found;
       });
+
       setMapping(initialMapping);
       setImportStep(2);
     };
@@ -163,21 +165,30 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
         };
         const name = String(getVal("name") || "");
         if (!name) return null;
+
         const baseUnit = String(getVal("baseUnit") || "Pcs");
         const buyPrice = Number(getVal("buyPrice")) || 0;
         const price = Number(getVal("price")) || 0;
         const sku = String(getVal("sku") || "");
         const stock = Number(getVal("stock")) || 0;
         const category = String(getVal("category") || "Umum");
+
         const units: ProductUnit[] = [{ name: baseUnit, conversion: 1, price, buyPrice }];
-        const conv2 = Number(getVal("conversion2"));
-        const name2 = String(getVal("unit2Name") || "");
-        if (conv2 > 1 && name2) {
-          units.push({ name: name2, conversion: conv2, price: price * conv2, buyPrice: buyPrice * conv2 });
-        }
-        return { id: `P-IMP-${Date.now()}-${idx}`, name, sku, category, baseUnit, stock, minStockAlert: 5, units, updatedAt: Date.now() };
+
+        return {
+          id: `P-IMP-${Date.now()}-${idx}`,
+          name,
+          sku,
+          category,
+          baseUnit,
+          stock,
+          minStockAlert: 5,
+          units,
+          updatedAt: Date.now(),
+        };
       })
       .filter((p) => p !== null) as Product[];
+
     try {
       await db.bulkSaveProducts(newProducts);
       setIsImportModalOpen(false);
@@ -217,6 +228,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
     const qtyInBase = Number(quantity) * unit.conversion;
     const oldStock = product.stock;
     const newStock = type === "IN" ? oldStock + qtyInBase : oldStock - qtyInBase;
+
     const updatedProduct = { ...product, stock: newStock, updatedAt: Date.now() };
     const log: StockLog = {
       id: `LOG-ADJ-${Date.now()}`,
@@ -235,18 +247,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
     db.saveProduct(updatedProduct, log);
     setIsStockModalOpen(false);
     refreshProducts();
-  };
-
-  const addUnitField = () => {
-    const units = [...(editingProduct.units || [])];
-    units.push({ name: "", conversion: 1, price: 0, buyPrice: 0 });
-    setEditingProduct({ ...editingProduct, units });
-  };
-
-  const removeUnitField = (idx: number) => {
-    if (idx === 0) return;
-    const units = editingProduct.units.filter((_: any, i: number) => i !== idx);
-    setEditingProduct({ ...editingProduct, units });
   };
 
   const filtered = products.filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -287,6 +287,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           )}
         </div>
       </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row gap-4 items-center">
           <Input placeholder="Cari nama atau barcode..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="max-w-md" prefix="fa-search" />
@@ -372,7 +373,9 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           </table>
         </div>
       </div>
-      <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Import Data Dari Aplikasi Lain">
+
+      {/* Modal Import */}
+      <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Import Data Produk (Excel)">
         {importStep === 1 && (
           <div className="space-y-6">
             <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative">
@@ -380,24 +383,24 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
               <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
                 <i className="fa-solid fa-file-excel"></i>
               </div>
-              <h4 className="font-bold text-slate-900">Pilih File Excel (.xls / .xlsx)</h4>
-              <p className="text-xs text-slate-500 mt-1">Upload file export dari aplikasi lama Anda</p>
+              <h4 className="font-bold text-slate-900">Pilih File Excel</h4>
+              <p className="text-xs text-slate-500 mt-1">Mendukung format .xls (lama) dan .xlsx (baru)</p>
             </div>
           </div>
         )}
         {importStep === 2 && (
           <div className="space-y-4">
             <div className="bg-slate-800 p-3 rounded-lg text-white mb-2">
-              <p className="text-xs">Cocokkan kolom di file Anda dengan Beris POS</p>
+              <p className="text-xs">Cocokkan kolom di file Anda dengan sistem kami</p>
             </div>
-            <div className="space-y-2 max-h-[50vh] overflow-y-auto no-scrollbar">
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto no-scrollbar">
               {[
                 { id: "name", label: "Nama Produk", required: true, icon: "fa-tag" },
                 { id: "sku", label: "Barcode / SKU", required: false, icon: "fa-barcode" },
-                { id: "price", label: "Harga Jual Dasar", required: false, icon: "fa-hand-holding-dollar" },
-                { id: "stock", label: "Stok Saat Ini", required: false, icon: "fa-box" },
+                { id: "price", label: "Harga Jual", required: false, icon: "fa-hand-holding-dollar" },
+                { id: "stock", label: "Stok Awal", required: false, icon: "fa-box" },
                 { id: "category", label: "Kategori", required: false, icon: "fa-folder" },
-                { id: "baseUnit", label: "Satuan Dasar", required: false, icon: "fa-ruler" },
+                { id: "baseUnit", label: "Satuan", required: false, icon: "fa-ruler" },
               ].map((field) => (
                 <div key={field.id} className="flex items-center gap-3 bg-white p-3 border border-slate-200 rounded-xl">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-xs">
@@ -432,26 +435,28 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl">
               <i className="fa-solid fa-cloud-arrow-up"></i>
             </div>
-            <h3 className="text-xl font-bold">Siap Konfirmasi?</h3>
-            <p className="text-sm text-slate-500">Ditemukan {excelRows.length} baris data.</p>
+            <h3 className="text-xl font-bold">Siap Import!</h3>
+            <p className="text-sm text-slate-500">Ditemukan {excelRows.length} baris data produk.</p>
             <div className="flex gap-2">
               <Button variant="secondary" className="flex-1" onClick={() => setImportStep(2)} disabled={isImporting}>
                 Kembali
               </Button>
               <Button className="flex-1" onClick={executeImport} disabled={isImporting}>
-                {isImporting ? <i className="fa-solid fa-spinner fa-spin"></i> : "Import Sekarang"}
+                {isImporting ? <i className="fa-solid fa-spinner fa-spin"></i> : "Mulai Import"}
               </Button>
             </div>
           </div>
         )}
       </Modal>
+
+      {/* Modal Stok */}
       <Modal isOpen={isStockModalOpen} onClose={() => setIsStockModalOpen(false)} title="Update Stok Barang">
         {stockAction.product && (
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
               <p className="font-bold text-blue-900">{stockAction.product.name}</p>
               <p className="text-xs text-blue-700">
-                Stok: {stockAction.product.stock} {stockAction.product.baseUnit}
+                Stok Sekarang: {stockAction.product.stock} {stockAction.product.baseUnit}
               </p>
             </div>
             <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -478,13 +483,15 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           </div>
         )}
       </Modal>
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingProduct.id ? "Edit Produk" : "Tambah Produk Baru"}>
+
+      {/* Modal Edit Produk */}
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingProduct.id ? "Edit Produk" : "Tambah Produk"}>
         <div className="space-y-4">
           <Input label="Nama Produk" value={editingProduct.name || ""} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Input label="Kategori" value={editingProduct.category || ""} onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })} />
             <div className="w-full">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">SKU</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Barcode/SKU</label>
               <div className="flex gap-1">
                 <input className="w-full px-2 py-2 border rounded-lg text-sm" value={editingProduct.sku || ""} onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })} />
                 <Button variant="secondary" onClick={() => setShowScanner(true)}>
@@ -496,10 +503,10 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           <div className="p-3 bg-gray-50 rounded-xl border grid grid-cols-3 gap-3">
             <Input label="Satuan" value={editingProduct.baseUnit || ""} onChange={(e) => setEditingProduct({ ...editingProduct, baseUnit: e.target.value })} />
             <Input label="Stok" type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: e.target.value })} disabled={!!editingProduct.id} />
-            <Input label="Alert" type="number" value={editingProduct.minStockAlert} onChange={(e) => setEditingProduct({ ...editingProduct, minStockAlert: e.target.value })} />
+            <Input label="Alert Stok" type="number" value={editingProduct.minStockAlert} onChange={(e) => setEditingProduct({ ...editingProduct, minStockAlert: e.target.value })} />
           </div>
           {editingProduct.units?.map((unit: any, idx: number) => (
-            <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3 relative">
+            <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Unit"
@@ -511,7 +518,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                   }}
                 />
                 <Input
-                  label="Isi"
+                  label="Konversi (Isi)"
                   type="number"
                   value={unit.conversion}
                   onChange={(e) => {
@@ -532,11 +539,12 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
               />
             </div>
           ))}
-          <Button className="w-full" onClick={handleSave}>
+          <Button className="w-full py-3 font-bold" onClick={handleSave}>
             Simpan Produk
           </Button>
         </div>
       </Modal>
+
       <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode">
         <div id="product-scanner" className="w-full max-w-[300px] bg-black rounded-lg min-h-[250px] mx-auto border-2 border-blue-500"></div>
       </Modal>
