@@ -11,15 +11,16 @@ import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
 import { auth } from "./services/firebase";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { OfflineIndicator } from "./components/UI";
+import { OfflineIndicator, Badge } from "./components/UI";
+import { UserProfile } from "./types";
 
 const NAV_ITEMS = [
-  { path: "/", label: "Dashboard", icon: "fa-gauge-high" },
-  { path: "/pos", label: "Kasir (POS)", icon: "fa-cash-register" },
-  { path: "/products", label: "Produk", icon: "fa-box" },
-  { path: "/customers", label: "Pelanggan", icon: "fa-users" },
-  { path: "/reports", label: "Laporan", icon: "fa-chart-pie" },
-  { path: "/settings", label: "Pengaturan", icon: "fa-gear" },
+  { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "staff"] },
+  { path: "/pos", label: "Kasir (POS)", icon: "fa-cash-register", roles: ["owner", "staff"] },
+  { path: "/products", label: "Produk", icon: "fa-box", roles: ["owner"] },
+  { path: "/customers", label: "Pelanggan", icon: "fa-users", roles: ["owner"] },
+  { path: "/reports", label: "Laporan", icon: "fa-chart-pie", roles: ["owner"] },
+  { path: "/settings", label: "Pengaturan", icon: "fa-gear", roles: ["owner"] },
 ];
 
 const SidebarItem = ({ path, label, icon, isCollapsed }: any) => (
@@ -75,21 +76,22 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [appSettings, setAppSettings] = useState(db.getSettings());
+  const [profile, setProfile] = useState<UserProfile | null>(db.getUserProfile());
   const location = useLocation();
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
-    window.addEventListener("resize", handleResize);
+    const handleSettingsUpdate = () => setAppSettings(db.getSettings());
+    const handleProfileUpdate = () => setProfile(db.getUserProfile());
 
-    // Listener untuk pembaruan pengaturan (termasuk logo)
-    const handleSettingsUpdate = () => {
-      setAppSettings(db.getSettings());
-    };
+    window.addEventListener("resize", handleResize);
     window.addEventListener("settings-updated", handleSettingsUpdate);
+    window.addEventListener("profile-updated", handleProfileUpdate);
 
     return () => {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("settings-updated", handleSettingsUpdate);
+      window.removeEventListener("profile-updated", handleProfileUpdate);
     };
   }, []);
 
@@ -103,6 +105,8 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
     }
   };
 
+  const allowedNav = NAV_ITEMS.filter((item) => item.roles.includes(profile?.role || "staff"));
+
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
       <OfflineIndicator />
@@ -115,22 +119,20 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
             <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center p-1.5 shadow-sm shrink-0">
               {appSettings.logoUrl ? <img src={appSettings.logoUrl} alt="Logo" className="w-full h-full object-contain" /> : <i className="fa-solid fa-cash-register text-blue-600 text-lg"></i>}
             </div>
-            <span className="font-bold text-base tracking-tight truncate">{appSettings.storeName || "Warung POS"}</span>
+            <div className="flex flex-col">
+              <span className="font-bold text-sm tracking-tight truncate">{appSettings.storeName || "Warung POS"}</span>
+              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-tighter">Role: {profile?.role || "Staff"}</span>
+            </div>
           </div>
           {!isMobile && (
             <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="text-slate-400 hover:text-white p-1 ml-auto">
               <i className={`fa-solid ${isSidebarOpen ? "fa-chevron-left" : "fa-bars"}`}></i>
             </button>
           )}
-          {isMobile && (
-            <button onClick={() => setSidebarOpen(false)} className="text-slate-400">
-              <i className="fa-solid fa-xmark"></i>
-            </button>
-          )}
         </div>
 
         <nav className="flex-1 p-3 overflow-y-auto">
-          {NAV_ITEMS.map((item) => (
+          {allowedNav.map((item) => (
             <SidebarItem key={item.path} {...item} isCollapsed={!isSidebarOpen && !isMobile} />
           ))}
         </nav>
@@ -140,7 +142,7 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-500 flex items-center justify-center text-[10px] font-bold">{user.email?.charAt(0).toUpperCase()}</div>
             {(isSidebarOpen || isMobile) && (
               <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium truncate">{user.displayName || "Owner Toko"}</p>
+                <p className="text-sm font-medium truncate">{profile?.displayName || user.displayName || "User"}</p>
                 <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
               </div>
             )}
@@ -162,9 +164,7 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
             </button>
             <h1 className="font-bold text-gray-800 truncate max-w-[200px]">{appSettings.storeName || "Warung POS"}</h1>
           </div>
-          <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center overflow-hidden">
-            {appSettings.logoUrl ? <img src={appSettings.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" /> : <i className="fa-solid fa-cash-register text-blue-600 text-sm"></i>}
-          </div>
+          <Badge color={profile?.role === "owner" ? "blue" : "green"}>{profile?.role?.toUpperCase()}</Badge>
         </header>
 
         <div className="flex-1 overflow-auto p-4 lg:p-6 relative">
@@ -178,24 +178,31 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
                 </PinGuard>
               }
             />
-            <Route path="/products" element={<Products />} />
-            <Route path="/customers" element={<Customers />} />
-            <Route
-              path="/reports"
-              element={
-                <PinGuard>
-                  <Reports />
-                </PinGuard>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <PinGuard>
-                  <Settings />
-                </PinGuard>
-              }
-            />
+
+            {/* Owner Protected Routes */}
+            {profile?.role === "owner" && (
+              <>
+                <Route path="/products" element={<Products />} />
+                <Route path="/customers" element={<Customers />} />
+                <Route
+                  path="/reports"
+                  element={
+                    <PinGuard>
+                      <Reports />
+                    </PinGuard>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <PinGuard>
+                      <Settings />
+                    </PinGuard>
+                  }
+                />
+              </>
+            )}
+
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </div>

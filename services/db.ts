@@ -1,175 +1,98 @@
-
-import { Product, Transaction, AppSettings, Customer, UserProfile, StockLog } from '../types';
-import { db_fs, auth } from './firebase';
-import { doc, setDoc, collection, deleteDoc, onSnapshot, getDoc, query, where, getDocs, updateDoc, orderBy, limit } from 'firebase/firestore';
+// FIX: Removed non-existent 'Category' and unused 'CartItem', 'UserRole' imports
+import { Product, Transaction, AppSettings, Customer, UserProfile } from "../types";
+import { db_fs, auth } from "./firebase";
+import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc } from "firebase/firestore";
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'warung_products',
-  TRANSACTIONS: 'warung_transactions',
-  CUSTOMERS: 'warung_customers',
-  SETTINGS: 'warung_settings',
-  PROFILE: 'warung_user_profile',
-  STOCK_LOGS: 'warung_stock_logs',
-  INIT: 'warung_initialized'
+  PRODUCTS: "warung_products",
+  TRANSACTIONS: "warung_transactions",
+  CATEGORIES: "warung_categories",
+  CUSTOMERS: "warung_customers",
+  SETTINGS: "warung_settings",
+  PROFILE: "warung_user_profile",
+  INIT: "warung_initialized",
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
-  storeName: 'Warung Baru',
-  storeAddress: 'Alamat belum diatur',
-  storePhone: '-',
+  storeName: "Warung Sejahtera",
+  storeAddress: "Jl. Merdeka No. 45, Jakarta Selatan",
+  storePhone: "0812-9988-7766",
   enableTax: false,
   taxRate: 11,
-  footerMessage: 'Terima kasih!',
+  footerMessage: "Terima kasih, selamat belanja kembali!",
   showLogo: true,
   logoUrl: null,
   securityPin: null,
   printerName: null,
-  tierDiscounts: { bronze: 0, silver: 2, gold: 5 }
+  tierDiscounts: { bronze: 0, silver: 2, gold: 5 },
 };
 
 class DBService {
-  private activeWarungId: string | null = null;
-  private unsubscribers: (() => void)[] = [];
-
   constructor() {
     this.init();
-  }
-
-  private init() {
-    const cachedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
-    if (cachedProfile) {
-      try {
-        const profile: UserProfile = JSON.parse(cachedProfile);
-        this.activeWarungId = profile.warungId;
-      } catch (e) {
-        localStorage.removeItem(STORAGE_KEYS.PROFILE);
-      }
-    }
-  }
-
-  setWarungId(id: string) {
-    this.activeWarungId = id;
     this.setupCloudSync();
   }
 
+  private init() {
+    if (!localStorage.getItem(STORAGE_KEYS.INIT)) {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
+      localStorage.setItem(STORAGE_KEYS.INIT, "true");
+    }
+  }
+
   private sanitizeForFirestore(obj: any): any {
-    return JSON.parse(JSON.stringify(obj, (key, value) => {
-      return value === undefined ? null : value;
-    }));
+    return JSON.parse(
+      JSON.stringify(obj, (key, value) => {
+        return value === undefined ? null : value;
+      })
+    );
   }
 
   private setupCloudSync() {
-    if (!this.activeWarungId) return;
-
-    this.unsubscribers.forEach(unsub => unsub());
-    this.unsubscribers = [];
-
-    // Gunakan try-catch di dalam snapshot untuk menangani delay permission
-    const unsubProducts = onSnapshot(
-      collection(db_fs, `warungs/${this.activeWarungId}/products`), 
-      (snapshot) => {
-        const products: any[] = [];
-        snapshot.forEach(doc => products.push(doc.data()));
-        if (products.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-          window.dispatchEvent(new Event('products-updated'));
+    auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        // Sync Profile
+        const profileDoc = await getDoc(doc(db_fs, "users", user.uid));
+        if (profileDoc.exists()) {
+          localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profileDoc.data()));
+          window.dispatchEvent(new Event("profile-updated"));
         }
-      },
-      (error) => {
-        console.warn("Firestore Sync Products Waiting...");
+
+        // Sync Products
+        onSnapshot(collection(db_fs, `users/${user.uid}/products`), (snapshot) => {
+          const products: any[] = [];
+          snapshot.forEach((doc) => products.push(doc.data()));
+          if (products.length > 0) {
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+            window.dispatchEvent(new Event("products-updated"));
+          }
+        });
       }
-    );
-
-    const unsubSettings = onSnapshot(
-      doc(db_fs, `warungs/${this.activeWarungId}/config/settings`), 
-      (snapshot) => {
-        if (snapshot.exists()) {
-          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(snapshot.data()));
-          window.dispatchEvent(new Event('settings-updated'));
-        }
-      },
-      (error) => {
-        console.warn("Firestore Sync Settings Waiting...");
-      }
-    );
-
-    this.unsubscribers.push(unsubProducts, unsubSettings);
+    });
   }
 
-  async getUserProfile(uid: string, retryCount = 0): Promise<UserProfile | null> {
-    try {
-      const userDoc = await getDoc(doc(db_fs, 'users', uid));
-      if (userDoc.exists()) {
-        const profile = userDoc.data() as UserProfile;
-        localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
-        this.activeWarungId = profile.warungId;
-        return profile;
-      }
-    } catch (e: any) {
-      // Jika error permission, coba lagi sampai 3 kali (untuk user yang baru mendaftar)
-      if (e.code === 'permission-denied' && retryCount < 3) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        return this.getUserProfile(uid, retryCount + 1);
-      }
-      console.error("Profile Fetch Failed:", e);
-    }
-    return null;
+  // --- USER PROFILE & ROLE ---
+  getUserProfile(): UserProfile | null {
+    const data = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    return data ? JSON.parse(data) : null;
   }
 
-  async getStaff(): Promise<UserProfile[]> {
-    if (!this.activeWarungId) return [];
-    try {
-      const q = query(collection(db_fs, 'users'), where('warungId', '==', this.activeWarungId));
-      const snapshot = await getDocs(q);
-      const staff: UserProfile[] = [];
-      snapshot.forEach(doc => staff.push(doc.data() as UserProfile));
-      return staff;
-    } catch (e) { return []; }
+  async saveUserProfile(profile: UserProfile): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    const sanitized = this.sanitizeForFirestore(profile);
+    await setDoc(doc(db_fs, "users", profile.uid), sanitized);
+    window.dispatchEvent(new Event("profile-updated"));
   }
 
-  async updateUserStatus(uid: string, active: boolean): Promise<void> {
-    await updateDoc(doc(db_fs, 'users', uid), { active });
-  }
-
-  async saveStockLog(log: StockLog): Promise<void> {
-    if (!this.activeWarungId) return;
-    const logs = this.getStockLogs();
-    logs.unshift(log);
-    localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs.slice(0, 100)));
-    try {
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/stock_logs`, log.id), this.sanitizeForFirestore(log));
-    } catch (e) { console.error(e); }
-  }
-
-  getStockLogs(): StockLog[] {
-    const data = localStorage.getItem(STORAGE_KEYS.STOCK_LOGS);
-    return data ? JSON.parse(data) : [];
-  }
-
-  async fetchRemoteStockLogs(): Promise<StockLog[]> {
-    if (!this.activeWarungId) return [];
-    try {
-      const q = query(collection(db_fs, `warungs/${this.activeWarungId}/stock_logs`), orderBy('timestamp', 'desc'), limit(50));
-      const snapshot = await getDocs(q);
-      const logs: StockLog[] = [];
-      snapshot.forEach(doc => logs.push(doc.data() as StockLog));
-      localStorage.setItem(STORAGE_KEYS.STOCK_LOGS, JSON.stringify(logs));
-      return logs;
-    } catch (e) {
-      console.error("Fetch logs failed:", e);
-      return this.getStockLogs();
-    }
-  }
-
+  // --- PRODUCTS ---
   getProducts(): Product[] {
     const data = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     return data ? JSON.parse(data) : [];
   }
 
-  async saveProduct(product: Product, log?: StockLog): Promise<void> {
-    if (!this.activeWarungId) return;
+  async saveProduct(product: Product): Promise<void> {
     const products = this.getProducts();
-    const index = products.findIndex(p => p.id === product.id);
+    const index = products.findIndex((p) => p.id === product.id);
     const updatedProduct = { ...product, updatedAt: Date.now() };
 
     if (index >= 0) products[index] = updatedProduct;
@@ -177,85 +100,86 @@ class DBService {
 
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
 
-    try {
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, product.id), this.sanitizeForFirestore(updatedProduct));
-      if (log) await this.saveStockLog(log);
-    } catch (e) { console.error(e); }
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const sanitized = this.sanitizeForFirestore(updatedProduct);
+        await setDoc(doc(db_fs, `users/${user.uid}/products`, product.id), sanitized);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
 
   async deleteProduct(id: string): Promise<void> {
-    if (!this.activeWarungId) return;
-    const products = this.getProducts().filter(p => p.id !== id);
+    const products = this.getProducts().filter((p) => p.id !== id);
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-    await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/products`, id));
+    const user = auth.currentUser;
+    if (user) await deleteDoc(doc(db_fs, `users/${user.uid}/products`, id));
   }
 
+  // --- TRANSACTIONS ---
   getTransactions(): Transaction[] {
     const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
     return data ? JSON.parse(data) : [];
   }
 
   async createTransaction(transaction: Transaction): Promise<void> {
-    if (!this.activeWarungId) return;
-    const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROFILE) || '{}');
     const transactions = this.getTransactions();
     transactions.unshift(transaction);
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
     const products = this.getProducts();
-    for (const item of transaction.items) {
-      const pIdx = products.findIndex(p => p.id === item.productId);
-      if (pIdx >= 0) {
-        const oldStock = products[pIdx].stock;
-        const qtyToReduce = item.quantity * item.conversion;
-        products[pIdx].stock -= qtyToReduce;
-        
-        const log: StockLog = {
-          id: `LOG-SALE-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          productId: item.productId,
-          productName: item.productName,
-          type: 'OUT',
-          logType: 'SALE',
-          quantity: item.quantity,
-          unitName: item.unitName,
-          previousStock: oldStock,
-          currentStock: products[pIdx].stock,
-          reason: `Penjualan (Struk: ${transaction.id.split('-')[1]})`,
-          operatorName: user.displayName || 'Kasir',
-          timestamp: Date.now()
-        };
-        
-        await this.saveProduct(products[pIdx], log);
+    transaction.items.forEach((item) => {
+      const productIndex = products.findIndex((p) => p.id === item.productId);
+      if (productIndex >= 0) {
+        products[productIndex].stock -= item.quantity * item.conversion;
+        this.saveProduct(products[productIndex]);
+      }
+    });
+
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const sanitized = this.sanitizeForFirestore(transaction);
+        await setDoc(doc(db_fs, `users/${user.uid}/transactions`, transaction.id), sanitized);
+      } catch (e) {
+        console.error(e);
       }
     }
-
-    try {
-      await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/transactions`, transaction.id), this.sanitizeForFirestore(transaction));
-    } catch (e) { console.error(e); }
   }
 
+  // --- CUSTOMERS ---
   getCustomers(): Customer[] {
     const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     return data ? JSON.parse(data) : [];
   }
 
   async saveCustomer(customer: Customer): Promise<void> {
-    if (!this.activeWarungId) return;
     const customers = this.getCustomers();
-    const index = customers.findIndex(c => c.id === customer.id);
+    const index = customers.findIndex((c) => c.id === customer.id);
     if (index >= 0) customers[index] = customer;
     else customers.push(customer);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    try { await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/customers`, customer.id), this.sanitizeForFirestore(customer)); } catch (e) {}
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const sanitized = this.sanitizeForFirestore(customer);
+        await setDoc(doc(db_fs, `users/${user.uid}/customers`, customer.id), sanitized);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
 
   async deleteCustomer(id: string): Promise<void> {
-    if (!this.activeWarungId) return;
-    const customers = this.getCustomers().filter(c => c.id !== id);
+    const customers = this.getCustomers().filter((c) => c.id !== id);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    await deleteDoc(doc(db_fs, `warungs/${this.activeWarungId}/customers`, id));
+    const user = auth.currentUser;
+    if (user) await deleteDoc(doc(db_fs, `users/${user.uid}/customers`, id));
   }
 
+  // --- SETTINGS ---
   getSettings(): AppSettings {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     const settings = data ? JSON.parse(data) : DEFAULT_SETTINGS;
@@ -263,20 +187,33 @@ class DBService {
   }
 
   async saveSettings(settings: AppSettings): Promise<void> {
-    if (!this.activeWarungId) return;
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-    window.dispatchEvent(new Event('settings-updated'));
-    try { await setDoc(doc(db_fs, `warungs/${this.activeWarungId}/config/settings`, 'settings'), this.sanitizeForFirestore(settings)); } catch (e) {}
+    window.dispatchEvent(new Event("settings-updated"));
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const sanitized = this.sanitizeForFirestore(settings);
+        await setDoc(doc(db_fs, `users/${user.uid}/config`, "settings"), sanitized);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  resetWithDemoData() {
+    Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+    window.location.reload();
   }
 
   exportDatabase(): string {
-    return JSON.stringify({
+    const data = {
       products: this.getProducts(),
       transactions: this.getTransactions(),
       customers: this.getCustomers(),
       settings: this.getSettings(),
-      timestamp: Date.now()
-    }, null, 2);
+      timestamp: Date.now(),
+    };
+    return JSON.stringify(data, null, 2);
   }
 
   importDatabase(jsonString: string): boolean {
@@ -286,17 +223,11 @@ class DBService {
       localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data.transactions || []));
       localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(data.customers || []));
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(data.settings || DEFAULT_SETTINGS));
+      localStorage.setItem(STORAGE_KEYS.INIT, "true");
       return true;
-    } catch (e) { return false; }
-  }
-
-  resetWithDemoData(): void {
-    localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
-    localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
-    localStorage.removeItem(STORAGE_KEYS.CUSTOMERS);
-    localStorage.removeItem(STORAGE_KEYS.SETTINGS);
-    this.unsubscribers.forEach(unsub => unsub());
-    this.unsubscribers = [];
+    } catch (e) {
+      return false;
+    }
   }
 }
 

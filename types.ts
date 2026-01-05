@@ -1,41 +1,23 @@
-
 export interface ProductUnit {
-  name: string; // e.g., "Pcs", "Slop", "Karton"
-  conversion: number; // Multiplier relative to base unit (e.g., 1, 10, 100)
-  price: number; // Selling price for this unit
-  buyPrice: number; // Cost of Goods Sold (Modal) per unit
+  name: string;
+  conversion: number;
+  price: number;
+  buyPrice: number;
 }
 
 export interface Product {
   id: string;
   name: string;
-  sku: string; // Barcode
+  sku: string;
   category: string;
-  baseUnit: string; // The smallest unit (e.g., Pcs)
-  stock: number; // Stored in base units
+  baseUnit: string;
+  stock: number;
   minStockAlert: number;
   units: ProductUnit[];
   updatedAt: number;
 }
 
-export type StockLogType = 'SALE' | 'RESTOCK' | 'ADJUSTMENT' | 'INITIAL';
-
-export interface StockLog {
-  id: string;
-  productId: string;
-  productName: string;
-  type: 'IN' | 'OUT';
-  logType: StockLogType;
-  quantity: number; // absolute value
-  unitName: string;
-  previousStock: number;
-  currentStock: number;
-  reason: string;
-  operatorName: string;
-  timestamp: number;
-}
-
-export type CustomerTier = 'Bronze' | 'Silver' | 'Gold';
+export type CustomerTier = "Bronze" | "Silver" | "Gold";
 
 export interface Customer {
   id: string;
@@ -61,13 +43,23 @@ export interface Transaction {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  paymentMethod: 'cash' | 'qris';
+  paymentMethod: "cash" | "qris";
   cashPaid: number;
   change: number;
   note?: string;
   customerId?: string;
   customerName?: string;
   discountAmount?: number;
+}
+
+export type UserRole = "owner" | "staff";
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  storeId: string; // Menghubungkan staff ke toko owner
 }
 
 export interface AppSettings {
@@ -88,33 +80,11 @@ export interface AppSettings {
   };
 }
 
-// --- NEW MULTI-TENANT TYPES ---
-export type UserRole = 'owner' | 'cashier' | 'admin';
-
-export interface UserProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  warungId: string;
-  role: UserRole;
-  active: boolean;
-}
-
-export interface Warung {
-  id: string;
-  name: string;
-  ownerUid: string;
-  status: 'active' | 'suspended';
-  plan: 'free' | 'pro';
-  createdAt: number;
-}
-
 export enum AppRoute {
-  DASHBOARD = 'dashboard',
-  POS = 'pos',
-  PRODUCTS = 'products',
-  CUSTOMERS = 'customers',
-  INVENTORY = 'inventory',
-  REPORTS = 'reports',
-  SETTINGS = 'settings'
+  DASHBOARD = "dashboard",
+  POS = "pos",
+  PRODUCTS = "products",
+  CUSTOMERS = "customers",
+  REPORTS = "reports",
+  SETTINGS = "settings",
 }
