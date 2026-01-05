@@ -59,7 +59,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   role: UserRole;
-  storeId: string; // Menghubungkan staff ke toko owner
+  warungId: string; // ID unik warung untuk sinkronisasi data antar owner & staff
 }
 
 export interface AppSettings {

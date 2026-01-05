@@ -1,12 +1,10 @@
-// FIX: Removed non-existent 'Category' and unused 'CartItem', 'UserRole' imports
 import { Product, Transaction, AppSettings, Customer, UserProfile } from "../types";
 import { db_fs, auth } from "./firebase";
-import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, query, orderBy } from "firebase/firestore";
 
 const STORAGE_KEYS = {
   PRODUCTS: "warung_products",
   TRANSACTIONS: "warung_transactions",
-  CATEGORIES: "warung_categories",
   CUSTOMERS: "warung_customers",
   SETTINGS: "warung_settings",
   PROFILE: "warung_user_profile",
@@ -28,6 +26,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 class DBService {
+  private profile: UserProfile | null = null;
+
   constructor() {
     this.init();
     this.setupCloudSync();
@@ -38,6 +38,8 @@ class DBService {
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
       localStorage.setItem(STORAGE_KEYS.INIT, "true");
     }
+    const cachedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    if (cachedProfile) this.profile = JSON.parse(cachedProfile);
   }
 
   private sanitizeForFirestore(obj: any): any {
@@ -51,36 +53,77 @@ class DBService {
   private setupCloudSync() {
     auth.onAuthStateChanged(async (user) => {
       if (user) {
-        // Sync Profile
+        // 1. Ambil Profil User Terlebih Dahulu untuk dapat warungId
         const profileDoc = await getDoc(doc(db_fs, "users", user.uid));
         if (profileDoc.exists()) {
-          localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profileDoc.data()));
+          const profileData = profileDoc.data() as UserProfile;
+          this.profile = profileData;
+          localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profileData));
           window.dispatchEvent(new Event("profile-updated"));
-        }
 
-        // Sync Products
-        onSnapshot(collection(db_fs, `users/${user.uid}/products`), (snapshot) => {
-          const products: any[] = [];
-          snapshot.forEach((doc) => products.push(doc.data()));
-          if (products.length > 0) {
-            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-            window.dispatchEvent(new Event("products-updated"));
-          }
-        });
+          // 2. Jika sudah ada warungId, sync data dari koleksi /warungs/{warungId}/
+          const warungId = profileData.warungId;
+
+          // Sync Settings
+          onSnapshot(doc(db_fs, `warungs/${warungId}/config`, "settings"), (docSnap) => {
+            if (docSnap.exists()) {
+              localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(docSnap.data()));
+              window.dispatchEvent(new Event("settings-updated"));
+            }
+          });
+
+          // Sync Products
+          onSnapshot(collection(db_fs, `warungs/${warungId}/products`), (snapshot) => {
+            const products: Product[] = [];
+            snapshot.forEach((doc) => products.push(doc.data() as Product));
+            if (products.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+              window.dispatchEvent(new Event("products-updated"));
+            }
+          });
+
+          // Sync Customers
+          onSnapshot(collection(db_fs, `warungs/${warungId}/customers`), (snapshot) => {
+            const customers: Customer[] = [];
+            snapshot.forEach((doc) => customers.push(doc.data() as Customer));
+            if (customers.length > 0) {
+              localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+              window.dispatchEvent(new Event("customers-updated"));
+            }
+          });
+
+          // Sync Transactions (Optional: limit to last 100 for performance)
+          // onSnapshot(query(collection(db_fs, `warungs/${warungId}/transactions`), orderBy('timestamp', 'desc')), (snapshot) => { ... });
+        }
       }
     });
   }
 
   // --- USER PROFILE & ROLE ---
   getUserProfile(): UserProfile | null {
-    const data = localStorage.getItem(STORAGE_KEYS.PROFILE);
-    return data ? JSON.parse(data) : null;
+    return this.profile;
   }
 
   async saveUserProfile(profile: UserProfile): Promise<void> {
+    this.profile = profile;
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
-    const sanitized = this.sanitizeForFirestore(profile);
-    await setDoc(doc(db_fs, "users", profile.uid), sanitized);
+
+    // Simpan ke /users/{uid}
+    await setDoc(doc(db_fs, "users", profile.uid), this.sanitizeForFirestore(profile));
+
+    // Jika owner, inisialisasi entitas warung di /warungs/{warungId}
+    if (profile.role === "owner") {
+      await setDoc(
+        doc(db_fs, "warungs", profile.warungId),
+        {
+          name: profile.displayName + " Store",
+          ownerId: profile.uid,
+          createdAt: Date.now(),
+        },
+        { merge: true }
+      );
+    }
+
     window.dispatchEvent(new Event("profile-updated"));
   }
 
@@ -100,22 +143,18 @@ class DBService {
 
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
 
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        const sanitized = this.sanitizeForFirestore(updatedProduct);
-        await setDoc(doc(db_fs, `users/${user.uid}/products`, product.id), sanitized);
-      } catch (e) {
-        console.error(e);
-      }
+    if (this.profile?.warungId) {
+      const sanitized = this.sanitizeForFirestore(updatedProduct);
+      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/products`, product.id), sanitized);
     }
   }
 
   async deleteProduct(id: string): Promise<void> {
     const products = this.getProducts().filter((p) => p.id !== id);
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-    const user = auth.currentUser;
-    if (user) await deleteDoc(doc(db_fs, `users/${user.uid}/products`, id));
+    if (this.profile?.warungId) {
+      await deleteDoc(doc(db_fs, `warungs/${this.profile.warungId}/products`, id));
+    }
   }
 
   // --- TRANSACTIONS ---
@@ -129,6 +168,7 @@ class DBService {
     transactions.unshift(transaction);
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
+    // Update Stok Lokal
     const products = this.getProducts();
     transaction.items.forEach((item) => {
       const productIndex = products.findIndex((p) => p.id === item.productId);
@@ -138,14 +178,10 @@ class DBService {
       }
     });
 
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        const sanitized = this.sanitizeForFirestore(transaction);
-        await setDoc(doc(db_fs, `users/${user.uid}/transactions`, transaction.id), sanitized);
-      } catch (e) {
-        console.error(e);
-      }
+    // Simpan ke Cloud
+    if (this.profile?.warungId) {
+      const sanitized = this.sanitizeForFirestore(transaction);
+      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/transactions`, transaction.id), sanitized);
     }
   }
 
@@ -161,22 +197,19 @@ class DBService {
     if (index >= 0) customers[index] = customer;
     else customers.push(customer);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        const sanitized = this.sanitizeForFirestore(customer);
-        await setDoc(doc(db_fs, `users/${user.uid}/customers`, customer.id), sanitized);
-      } catch (e) {
-        console.error(e);
-      }
+
+    if (this.profile?.warungId) {
+      const sanitized = this.sanitizeForFirestore(customer);
+      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/customers`, customer.id), sanitized);
     }
   }
 
   async deleteCustomer(id: string): Promise<void> {
     const customers = this.getCustomers().filter((c) => c.id !== id);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    const user = auth.currentUser;
-    if (user) await deleteDoc(doc(db_fs, `users/${user.uid}/customers`, id));
+    if (this.profile?.warungId) {
+      await deleteDoc(doc(db_fs, `warungs/${this.profile.warungId}/customers`, id));
+    }
   }
 
   // --- SETTINGS ---
@@ -189,45 +222,16 @@ class DBService {
   async saveSettings(settings: AppSettings): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     window.dispatchEvent(new Event("settings-updated"));
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        const sanitized = this.sanitizeForFirestore(settings);
-        await setDoc(doc(db_fs, `users/${user.uid}/config`, "settings"), sanitized);
-      } catch (e) {
-        console.error(e);
-      }
+
+    if (this.profile?.warungId) {
+      const sanitized = this.sanitizeForFirestore(settings);
+      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/config`, "settings"), sanitized);
     }
   }
 
   resetWithDemoData() {
     Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
     window.location.reload();
-  }
-
-  exportDatabase(): string {
-    const data = {
-      products: this.getProducts(),
-      transactions: this.getTransactions(),
-      customers: this.getCustomers(),
-      settings: this.getSettings(),
-      timestamp: Date.now(),
-    };
-    return JSON.stringify(data, null, 2);
-  }
-
-  importDatabase(jsonString: string): boolean {
-    try {
-      const data = JSON.parse(jsonString);
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products || []));
-      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data.transactions || []));
-      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(data.customers || []));
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(data.settings || DEFAULT_SETTINGS));
-      localStorage.setItem(STORAGE_KEYS.INIT, "true");
-      return true;
-    } catch (e) {
-      return false;
-    }
   }
 }
 

@@ -1,14 +1,17 @@
 import React, { useState } from "react";
-import { auth } from "../services/firebase";
+import { auth, db_fs } from "../services/firebase";
 import { db } from "../services/db";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, updateProfile } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { Button, Input, Card } from "../components/UI";
-import { UserProfile } from "../types";
+import { UserProfile, UserRole } from "../types";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [warungIdInput, setWarungIdInput] = useState("");
+  const [role, setRole] = useState<UserRole>("owner");
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -20,16 +23,31 @@ const Login: React.FC = () => {
 
     try {
       if (isRegistering) {
+        // Validasi Warung ID jika mendaftar sebagai Staff
+        if (role === "staff") {
+          if (!warungIdInput.trim()) {
+            setError("Silakan masukkan Warung ID dari Pemilik.");
+            setLoading(false);
+            return;
+          }
+          const warungDoc = await getDoc(doc(db_fs, "warungs", warungIdInput.trim()));
+          if (!warungDoc.exists()) {
+            setError("Warung ID tidak ditemukan. Periksa kembali kodenya.");
+            setLoading(false);
+            return;
+          }
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(userCredential.user, { displayName });
 
-        // Inisialisasi Profil sebagai Owner saat pendaftaran pertama
+        // Inisialisasi Profil
         const profile: UserProfile = {
           uid: userCredential.user.uid,
           email: email,
           displayName: displayName,
-          role: "owner",
-          storeId: userCredential.user.uid,
+          role: role,
+          warungId: role === "owner" ? userCredential.user.uid : warungIdInput.trim(),
         };
         await db.saveUserProfile(profile);
       } else {
@@ -44,6 +62,9 @@ const Login: React.FC = () => {
         case "auth/email-already-in-use":
           setError("Email sudah terdaftar. Silakan masuk saja.");
           break;
+        case "auth/weak-password":
+          setError("Password terlalu lemah (min. 6 karakter).");
+          break;
         default:
           setError("Terjadi kesalahan. Silakan coba lagi nanti.");
       }
@@ -57,16 +78,15 @@ const Login: React.FC = () => {
     setError("");
     try {
       const result = await signInWithPopup(auth, provider);
-
-      // Jika profil belum ada (pengguna baru via Google), buatkan sebagai Owner
       const existingProfile = db.getUserProfile();
       if (!existingProfile) {
+        // Default Google Login sebagai owner jika belum ada profil
         const profile: UserProfile = {
           uid: result.user.uid,
           email: result.user.email || "",
-          displayName: result.user.displayName || "Owner",
+          displayName: result.user.displayName || "User",
           role: "owner",
-          storeId: result.user.uid,
+          warungId: result.user.uid,
         };
         await db.saveUserProfile(profile);
       }
@@ -83,52 +103,76 @@ const Login: React.FC = () => {
       <div className="absolute bottom-0 -right-20 w-72 h-72 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
 
       <Card className="w-full max-w-md p-8 shadow-2xl relative z-10 border-slate-800">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/50">
-            <i className="fa-solid fa-cash-register text-3xl text-white"></i>
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/50">
+            <i className="fa-solid fa-cash-register text-2xl text-white"></i>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900">Warung POS Pro</h1>
-          <p className="text-slate-500 mt-2">{isRegistering ? "Daftar akun pemilik toko baru" : "Silakan masuk untuk mengelola toko"}</p>
+          <h1 className="text-2xl font-bold text-slate-900">Warung POS Pro</h1>
+          <p className="text-slate-500 mt-1 text-sm">{isRegistering ? "Buat akun pengelola toko" : "Masuk untuk kelola warung Anda"}</p>
         </div>
 
-        <form onSubmit={handleAuth} className="space-y-5">
+        <form onSubmit={handleAuth} className="space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg flex items-center gap-2">
+            <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-[11px] rounded-lg flex items-center gap-2">
               <i className="fa-solid fa-circle-exclamation"></i>
               {error}
             </div>
           )}
 
-          {isRegistering && <Input label="Nama Pemilik / Toko" type="text" placeholder="Masukkan nama Anda" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />}
+          {isRegistering && (
+            <>
+              <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
+                <button type="button" onClick={() => setRole("owner")} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === "owner" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}>
+                  PEMILIK
+                </button>
+                <button type="button" onClick={() => setRole("staff")} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === "staff" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}>
+                  KASIR
+                </button>
+              </div>
+
+              <Input label="Nama Lengkap" placeholder="Nama Anda" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+
+              {role === "staff" && (
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-2">
+                  <Input label="Warung ID (Dari Pemilik)" placeholder="Masukkan Kode Warung" value={warungIdInput} onChange={(e) => setWarungIdInput(e.target.value)} required />
+                  <p className="text-[10px] text-amber-700 mt-1">Minta Pemilik untuk memberikan Warung ID dari menu Pengaturan.</p>
+                </div>
+              )}
+            </>
+          )}
 
           <Input label="Email" type="email" placeholder="admin@warung.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
 
           <Input label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
 
-          <Button type="submit" className="w-full py-3 text-lg font-bold" disabled={loading}>
+          <Button type="submit" className="w-full py-2.5 font-bold" disabled={loading}>
             {loading ? <i className="fa-solid fa-circle-notch fa-spin mr-2"></i> : null}
-            {isRegistering ? "Daftar Sekarang" : "Masuk Sekarang"}
+            {isRegistering ? "Daftar" : "Masuk"}
           </Button>
 
           <div className="text-center mt-4">
-            <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-sm text-blue-600 hover:underline font-medium">
-              {isRegistering ? "Sudah punya akun? Login di sini" : "Belum punya akun? Daftar di sini"}
+            <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-blue-600 hover:underline font-medium">
+              {isRegistering ? "Sudah punya akun? Login" : "Belum punya akun? Daftar"}
             </button>
           </div>
 
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-slate-200"></span>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-slate-400">Atau</span>
-            </div>
-          </div>
+          {!isRegistering && (
+            <>
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-slate-200"></span>
+                </div>
+                <div className="relative flex justify-center text-[10px] uppercase">
+                  <span className="bg-white px-2 text-slate-400">Atau</span>
+                </div>
+              </div>
 
-          <button type="button" onClick={handleGoogleLogin} className="w-full flex items-center justify-center gap-3 py-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 font-medium">
-            <img src="https://www.gstatic.com/favicon.ico" alt="G" className="w-4 h-4" />
-            Akun Google
-          </button>
+              <button type="button" onClick={handleGoogleLogin} className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 text-sm font-medium">
+                <img src="https://www.gstatic.com/favicon.ico" alt="G" className="w-4 h-4" />
+                Masuk dengan Google
+              </button>
+            </>
+          )}
         </form>
       </Card>
     </div>
