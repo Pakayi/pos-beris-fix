@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { db } from "../services/db";
 import { Transaction, Product, AppSettings } from "../types";
-// FIX: Add Badge to the imported components from UI
-import { Card, Button, Badge } from "../components/UI";
+import { Card, Button, Badge, Modal } from "../components/UI";
 import { jsPDF } from "jspdf";
+import { GoogleGenAI } from "@google/genai";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 type DateRange = "today" | "week" | "month" | "all";
@@ -17,6 +17,11 @@ const Reports: React.FC = () => {
   const [filteredTx, setFilteredTx] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<AppSettings>(db.getSettings());
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // AI State
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResponse, setAiResponse] = useState("");
 
   useEffect(() => {
     setTransactions(db.getTransactions());
@@ -43,7 +48,6 @@ const Reports: React.FC = () => {
     setFilteredTx(filtered);
   }, [range, transactions]);
 
-  // Statistics Calculation
   const stats = useMemo(() => {
     const totalRevenue = filteredTx.reduce((sum, t) => sum + t.totalAmount, 0);
     const totalTransactions = filteredTx.length;
@@ -93,18 +97,6 @@ const Reports: React.FC = () => {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    // Asset Valuation
-    let totalAssetValue = 0;
-    let totalPotentialRevenue = 0;
-    products.forEach((p) => {
-      const baseUnit = p.units.find((u) => u.conversion === 1) || p.units[0];
-      const conversionFactor = baseUnit.conversion;
-      const buyPricePerBase = (baseUnit.buyPrice || 0) / conversionFactor;
-      const sellPricePerBase = baseUnit.price / conversionFactor;
-      totalAssetValue += p.stock * buyPricePerBase;
-      totalPotentialRevenue += p.stock * sellPricePerBase;
-    });
-
     return {
       totalRevenue,
       totalProfit,
@@ -112,26 +104,43 @@ const Reports: React.FC = () => {
       avgTransaction,
       topProducts,
       categoryData,
-      totalAssetValue,
-      totalPotentialRevenue,
-      potentialProfit: totalPotentialRevenue - totalAssetValue,
     };
   }, [filteredTx, products]);
 
-  const chartData = useMemo(() => {
-    const dataMap = new Map<string, number>();
-    filteredTx.forEach((t) => {
-      const date = new Date(t.timestamp).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
-      dataMap.set(date, (dataMap.get(date) || 0) + t.totalAmount);
-    });
-    return Array.from(dataMap.entries())
-      .map(([name, sales]) => ({ name, sales }))
-      .reverse();
-  }, [filteredTx]);
-
   const formatRp = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
-  // --- FEATURE: PRINT PDF ---
+  // --- AI ANALYSIS FEATURE ---
+  const handleAskAI = async () => {
+    setShowAIModal(true);
+    setAiLoading(true);
+    setAiResponse("");
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Anda adalah konsultan bisnis ahli untuk sebuah 'Warung' (toko kelontong kecil) di Indonesia.
+Berdasarkan data performa warung berikut untuk periode (${range}):
+- Total Omzet: ${formatRp(stats.totalRevenue)}
+- Estimasi Keuntungan: ${formatRp(stats.totalProfit)}
+- Jumlah Transaksi: ${stats.totalTransactions}
+- Produk Terlaris: ${stats.topProducts.map((p) => `${p.name} (${p.qty} terjual)`).join(", ")}
+- Kategori Dominan: ${stats.categoryData.map((c) => c.name).join(", ")}
+
+Berikan 3-4 saran bisnis yang konkret, profesional, dan menyemangat dalam bahasa Indonesia. Fokus pada manajemen stok, strategi harga, dan cara meningkatkan kunjungan pelanggan. Gunakan format poin-poin yang mudah dibaca.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+      });
+
+      setAiResponse(response.text || "Maaf, AI tidak dapat memberikan saran saat ini.");
+    } catch (e) {
+      console.error(e);
+      setAiResponse("Gagal terhubung ke AI. Pastikan koneksi internet Anda stabil.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const handlePrintPDF = () => {
     setIsProcessing(true);
     try {
@@ -139,9 +148,8 @@ const Reports: React.FC = () => {
       const pageWidth = doc.internal.pageSize.getWidth();
       const rangeText = range === "today" ? "Hari Ini" : range === "week" ? "7 Hari Terakhir" : range === "month" ? "Bulan Ini" : "Semua Waktu";
 
-      // Header
       doc.setFontSize(22);
-      doc.setTextColor(15, 23, 42); // slate-900
+      doc.setTextColor(15, 23, 42);
       doc.text(settings.storeName, 14, 20);
 
       doc.setFontSize(10);
@@ -153,13 +161,12 @@ const Reports: React.FC = () => {
       doc.setDrawColor(226, 232, 240);
       doc.line(14, 38, pageWidth - 14, 38);
 
-      // Summary Cards
       doc.setFontSize(12);
       doc.setTextColor(15, 23, 42);
       doc.text("RINGKASAN PERFORMA", 14, 50);
 
       const summaryY = 58;
-      doc.setFillColor(248, 250, 252); // slate-50
+      doc.setFillColor(248, 250, 252);
       doc.roundedRect(14, summaryY, pageWidth - 28, 40, 3, 3, "F");
 
       doc.setFontSize(10);
@@ -172,13 +179,8 @@ const Reports: React.FC = () => {
       doc.setTextColor(30, 41, 59);
       doc.text(formatRp(stats.totalRevenue), 70, summaryY + 12);
       doc.text(stats.totalTransactions.toString(), 70, summaryY + 22);
-      doc.setTextColor(16, 185, 129); // green-500
+      doc.setTextColor(16, 185, 129);
       doc.text(formatRp(stats.totalProfit), 70, summaryY + 32);
-
-      // Top Products Table
-      doc.setFontSize(12);
-      doc.setTextColor(15, 23, 42);
-      doc.text("TOP 5 PRODUK TERLARIS", 14, 115);
 
       let tableY = 125;
       doc.setFillColor(241, 245, 249);
@@ -202,11 +204,6 @@ const Reports: React.FC = () => {
         tableY += 10;
       });
 
-      // Footer
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text("Laporan ini dihasilkan secara otomatis oleh Warung POS Pro.", pageWidth / 2, 285, { align: "center" });
-
       doc.save(`Laporan_${settings.storeName.replace(/\s+/g, "_")}_${range}.pdf`);
     } catch (e) {
       console.error(e);
@@ -216,7 +213,6 @@ const Reports: React.FC = () => {
     }
   };
 
-  // --- FEATURE: EXPORT EXCEL (CSV) ---
   const handleExportExcel = () => {
     setIsProcessing(true);
     try {
@@ -242,7 +238,6 @@ const Reports: React.FC = () => {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10">
-      {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-200 pb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Laporan Bisnis</h1>
@@ -289,15 +284,13 @@ const Reports: React.FC = () => {
         </div>
 
         <div className="space-y-6">
-          {/* AI Advisor Promo */}
           <Card className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white border-none shadow-xl shadow-blue-200">
             <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2 block">Punya Pertanyaan Bisnis?</span>
-            <Button variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold mt-2" icon="fa-wand-magic-sparkles">
+            <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold mt-2 hover:bg-blue-50" icon="fa-wand-magic-sparkles">
               Tanya AI Konsultan
             </Button>
           </Card>
 
-          {/* Actions Card */}
           <Card className="p-6 space-y-4">
             <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2">Aksi Laporan</h3>
             <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-circle-notch fa-spin" : "fa-file-pdf"}>
@@ -309,6 +302,36 @@ const Reports: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* AI Modal */}
+      <Modal
+        isOpen={showAIModal}
+        onClose={() => setShowAIModal(false)}
+        title="AI Konsultan Bisnis"
+        footer={
+          <Button variant="secondary" onClick={() => setShowAIModal(false)}>
+            Tutup
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+            <div className="flex items-center gap-3 mb-3 text-indigo-700">
+              <i className="fa-solid fa-robot text-xl animate-bounce"></i>
+              <span className="font-bold">Analisis Data Selesai</span>
+            </div>
+            {aiLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-sm text-indigo-600 font-medium animate-pulse">Menghitung strategi terbaik untuk warung Anda...</p>
+              </div>
+            ) : (
+              <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{aiResponse}</div>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 italic text-center">*AI memberikan saran berdasarkan data yang ada. Selalu gunakan pertimbangan pribadi dalam mengambil keputusan bisnis.</p>
+        </div>
+      </Modal>
     </div>
   );
 };
