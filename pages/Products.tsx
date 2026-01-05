@@ -3,6 +3,8 @@ import { db } from "../services/db";
 import { Product, ProductUnit, StockLog, UserRole } from "../types";
 import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+// @ts-ignore - Loaded via importmap in index.html
+import * as XLSX from "xlsx";
 
 interface ProductsProps {
   role: UserRole;
@@ -26,8 +28,8 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   // Import State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
-  const [csvData, setCsvData] = useState<any[]>([]);
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [excelRows, setExcelRows] = useState<any[]>([]);
+  const [columnHeaders, setColumnHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [isImporting, setIsImporting] = useState(false);
 
@@ -81,41 +83,37 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
   const refreshProducts = () => setProducts(db.getProducts());
 
-  const handleExportCSV = () => {
+  const handleExportExcel = () => {
     if (!isOwner) return;
-    // Enhanced CSV Export with Multi-Unit support as separate columns
-    let csv = "SKU,Nama,Kategori,Stok,Satuan_Dasar,Harga_Modal_Dasar,Harga_Jual_Dasar,Satuan_2,Konversi_2,Modal_2,Jual_2,Satuan_3,Konversi_3,Modal_3,Jual_3\n";
-    products.forEach((p) => {
+
+    const exportData = products.map((p) => {
       const units = p.units || [];
       const u1 = units.find((u) => u.conversion === 1) || { name: p.baseUnit, price: 0, buyPrice: 0, conversion: 1 };
-      const u2 = units.length > 1 ? units.find((u) => u.conversion !== 1) : null;
-      const u3 = units.length > 2 ? units.filter((u) => u.conversion !== 1)[1] : null;
+      const extraUnits = units.filter((u) => u.conversion !== 1);
 
-      const row = [
-        p.sku || "",
-        `"${p.name}"`,
-        `"${p.category}"`,
-        p.stock,
-        u1.name,
-        u1.buyPrice,
-        u1.price,
-        u2 ? u2.name : "",
-        u2 ? u2.conversion : "",
-        u2 ? u2.buyPrice : "",
-        u2 ? u2.price : "",
-        u3 ? u3.name : "",
-        u3 ? u3.conversion : "",
-        u3 ? u3.buyPrice : "",
-        u3 ? u3.price : "",
-      ];
-      csv += row.join(",") + "\n";
+      return {
+        KODE_BARCODE: p.sku || "",
+        NAMA_PRODUK: p.name,
+        KATEGORI: p.category,
+        STOK: p.stock,
+        SATUAN_DASAR: u1.name,
+        HARGA_MODAL_DASAR: u1.buyPrice,
+        HARGA_JUAL_DASAR: u1.price,
+        SATUAN_2: extraUnits[0]?.name || "",
+        KONVERSI_2: extraUnits[0]?.conversion || "",
+        MODAL_2: extraUnits[0]?.buyPrice || "",
+        JUAL_2: extraUnits[0]?.price || "",
+        SATUAN_3: extraUnits[1]?.name || "",
+        KONVERSI_3: extraUnits[1]?.conversion || "",
+        MODAL_3: extraUnits[1]?.buyPrice || "",
+        JUAL_3: extraUnits[1]?.price || "",
+      };
     });
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `beris-pos-produk-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Data Produk");
+    XLSX.writeFile(workbook, `beris-pos-produk-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,58 +122,43 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      parseCSV(text);
+      const data = new Uint8Array(event.target?.result as ArrayBuffer);
+      const workbook = XLSX.read(data, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+      if (rows.length === 0) return;
+
+      const headers = rows[0].map((h) => String(h).trim());
+      const dataRows = rows.slice(1);
+
+      setColumnHeaders(headers);
+      setExcelRows(dataRows);
+
+      // Enhanced Smart Auto-mapping based on Competitor columns
+      const initialMapping: Record<string, string> = {};
+      const fieldSuggestions: Record<string, string[]> = {
+        name: ["nama", "name", "barang", "produk", "item", "product", "deskripsi", "NAMA"],
+        sku: ["sku", "barcode", "kode", "code", "barcode1", "KODE_BARCODE", "KODE_BARANG"],
+        price: ["harga", "jual", "toko", "price", "sell", "harga_jual", "TOKO"],
+        buyPrice: ["modal", "beli", "buy", "cogs", "harga_beli", "harga_modal"],
+        stock: ["stok", "jumlah", "stock", "qty", "balance", "STOK"],
+        category: ["kategori", "category", "golongan", "group", "sub_kategori", "KATEGORI"],
+        baseUnit: ["satuan", "unit", "uom", "satuan_1", "SATUAN_1"],
+        conversion2: ["isi", "konversi", "multiplier", "konversi_2", "ISI"],
+        unit2Name: ["satuan_2", "unit_2", "SATUAN_2"],
+      };
+
+      Object.keys(fieldSuggestions).forEach((field) => {
+        const found = headers.find((h) => fieldSuggestions[field].some((s) => h.toLowerCase() === s.toLowerCase() || h.toLowerCase().includes(s.toLowerCase())));
+        if (found) initialMapping[field] = found;
+      });
+
+      setMapping(initialMapping);
+      setImportStep(2);
     };
-    reader.readAsText(file);
-  };
-
-  const parseCSV = (text: string) => {
-    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
-    if (lines.length === 0) return;
-
-    // Simple CSV parser that handles quotes
-    const parseLine = (line: string) => {
-      const result = [];
-      let current = "";
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') inQuotes = !inQuotes;
-        else if (char === "," && !inQuotes) {
-          result.push(current.trim());
-          current = "";
-        } else current += char;
-      }
-      result.push(current.trim());
-      return result;
-    };
-
-    const headers = parseLine(lines[0]);
-    const data = lines.slice(1).map(parseLine);
-
-    setCsvHeaders(headers);
-    setCsvData(data);
-
-    // Auto-mapping logic
-    const initialMapping: Record<string, string> = {};
-    const fieldSuggestions: Record<string, string[]> = {
-      name: ["nama", "name", "barang", "produk", "item", "product"],
-      sku: ["sku", "barcode", "kode", "code"],
-      price: ["harga", "jual", "toko", "price", "sell"],
-      buyPrice: ["modal", "beli", "buy", "cogs"],
-      stock: ["stok", "jumlah", "stock", "qty"],
-      category: ["kategori", "category", "golongan", "group"],
-      baseUnit: ["satuan", "unit", "uom"],
-    };
-
-    Object.keys(fieldSuggestions).forEach((field) => {
-      const found = headers.find((h) => fieldSuggestions[field].some((s) => h.toLowerCase().includes(s.toLowerCase())));
-      if (found) initialMapping[field] = found;
-    });
-
-    setMapping(initialMapping);
-    setImportStep(2);
+    reader.readAsArrayBuffer(file);
   };
 
   const executeImport = async () => {
@@ -185,38 +168,54 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
     }
 
     setIsImporting(true);
-    const newProducts: Product[] = csvData
+    const newProducts: Product[] = excelRows
       .map((row, idx) => {
         const getVal = (field: string) => {
           const header = mapping[field];
-          if (!header) return "";
-          const colIdx = csvHeaders.indexOf(header);
-          return row[colIdx] || "";
+          if (!header) return null;
+          const colIdx = columnHeaders.indexOf(header);
+          return row[colIdx];
         };
 
-        const name = getVal("name");
+        const name = String(getVal("name") || "");
         if (!name) return null;
 
-        const baseUnit = getVal("baseUnit") || "Pcs";
+        const baseUnit = String(getVal("baseUnit") || "Pcs");
         const buyPrice = Number(getVal("buyPrice")) || 0;
         const price = Number(getVal("price")) || 0;
+        const sku = String(getVal("sku") || "");
+        const stock = Number(getVal("stock")) || 0;
+        const category = String(getVal("category") || "Umum");
+
+        const units: ProductUnit[] = [
+          {
+            name: baseUnit,
+            conversion: 1,
+            price,
+            buyPrice,
+          },
+        ];
+
+        const conv2 = Number(getVal("conversion2"));
+        const name2 = String(getVal("unit2Name") || "");
+        if (conv2 > 1 && name2) {
+          units.push({
+            name: name2,
+            conversion: conv2,
+            price: price * conv2,
+            buyPrice: buyPrice * conv2,
+          });
+        }
 
         return {
           id: `P-IMP-${Date.now()}-${idx}`,
           name,
-          sku: getVal("sku"),
-          category: getVal("category") || "Umum",
+          sku,
+          category,
           baseUnit,
-          stock: Number(getVal("stock")) || 0,
+          stock,
           minStockAlert: 5,
-          units: [
-            {
-              name: baseUnit,
-              conversion: 1,
-              price,
-              buyPrice,
-            },
-          ],
+          units,
           updatedAt: Date.now(),
         };
       })
@@ -226,9 +225,9 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       await db.bulkSaveProducts(newProducts);
       setIsImportModalOpen(false);
       refreshProducts();
-      alert(`Berhasil mengimpor ${newProducts.length} produk!`);
+      alert(`Berhasil mengimpor ${newProducts.length} produk ke Beris POS!`);
     } catch (e) {
-      alert("Gagal mengimpor data. Pastikan format benar.");
+      alert("Gagal mengimpor data. Pastikan format file benar.");
     } finally {
       setIsImporting(false);
       setImportStep(1);
@@ -318,10 +317,10 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                 variant="secondary"
                 icon="fa-file-import"
               >
-                Import
+                Import Excel
               </Button>
-              <Button onClick={handleExportCSV} variant="outline" icon="fa-file-excel">
-                Export
+              <Button onClick={handleExportExcel} variant="outline" icon="fa-file-excel">
+                Export Excel
               </Button>
               <Button
                 onClick={() => {
@@ -425,46 +424,54 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       </div>
 
       {/* Modal Import */}
-      <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Import Data Produk">
+      <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Import Data Dari Aplikasi Lain">
         {importStep === 1 && (
           <div className="space-y-6">
             <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer relative">
-              <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+              <input type="file" accept=".xls,.xlsx" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
               <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
-                <i className="fa-solid fa-file-csv"></i>
+                <i className="fa-solid fa-file-excel"></i>
               </div>
-              <h4 className="font-bold text-slate-900">Pilih File CSV</h4>
-              <p className="text-xs text-slate-500 mt-1">Upload file export dari aplikasi lama Anda</p>
+              <h4 className="font-bold text-slate-900">Pilih File Excel (.xls / .xlsx)</h4>
+              <p className="text-xs text-slate-500 mt-1">Upload file export dari aplikasi lama Anda (Software POS Desktop, ERP, dll)</p>
             </div>
             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-[11px] text-blue-700 leading-relaxed">
-              <p className="font-bold mb-1 uppercase tracking-wider">💡 Tips Beris POS</p>
-              Kami mendukung import cerdas. Anda tidak perlu mengubah kolom Excel Anda. Cukup upload, nanti kita cocokkan bersama di langkah berikutnya.
+              <p className="font-bold mb-1 uppercase tracking-wider">💡 Fitur Import Pintar</p>
+              Beris POS akan otomatis mendeteksi kolom yang sesuai. Anda tidak perlu repot mengubah isi file Excel Anda.
             </div>
           </div>
         )}
 
         {importStep === 2 && (
           <div className="space-y-4">
-            <p className="text-xs font-bold text-slate-500 uppercase">Cocokkan Kolom Anda</p>
-            <div className="space-y-3">
+            <div className="bg-slate-800 p-3 rounded-lg text-white mb-2">
+              <p className="text-[10px] font-bold uppercase opacity-60">Mapping Kolom</p>
+              <p className="text-xs">Cocokkan kolom di file Anda dengan data di Beris POS</p>
+            </div>
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 no-scrollbar">
               {[
-                { id: "name", label: "Nama Produk", required: true },
-                { id: "sku", label: "Barcode / SKU", required: false },
-                { id: "price", label: "Harga Jual Dasar", required: false },
-                { id: "buyPrice", label: "Harga Modal", required: false },
-                { id: "stock", label: "Stok Saat Ini", required: false },
-                { id: "category", label: "Kategori", required: false },
-                { id: "baseUnit", label: "Satuan Dasar", required: false },
+                { id: "name", label: "Nama Produk", required: true, icon: "fa-tag" },
+                { id: "sku", label: "Barcode / SKU", required: false, icon: "fa-barcode" },
+                { id: "price", label: "Harga Jual Dasar", required: false, icon: "fa-hand-holding-dollar" },
+                { id: "buyPrice", label: "Harga Modal", required: false, icon: "fa-cart-shopping" },
+                { id: "stock", label: "Stok Saat Ini", required: false, icon: "fa-box" },
+                { id: "category", label: "Kategori", required: false, icon: "fa-folder" },
+                { id: "baseUnit", label: "Satuan Dasar", required: false, icon: "fa-ruler" },
+                { id: "unit2Name", label: "Satuan Grosir (Opsional)", required: false, icon: "fa-boxes" },
+                { id: "conversion2", label: "Isi/Konversi Grosir", required: false, icon: "fa-calculator" },
               ].map((field) => (
-                <div key={field.id} className="flex items-center gap-3 bg-white p-2 border rounded-lg">
+                <div key={field.id} className="flex items-center gap-3 bg-white p-3 border border-slate-200 rounded-xl hover:border-blue-300 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-xs">
+                    <i className={`fa-solid ${field.icon}`}></i>
+                  </div>
                   <div className="flex-1">
-                    <p className="text-xs font-bold text-slate-800">
+                    <p className="text-[11px] font-bold text-slate-800">
                       {field.label} {field.required && <span className="text-red-500">*</span>}
                     </p>
                   </div>
-                  <select className="flex-1 text-xs border rounded p-1 bg-slate-50" value={mapping[field.id] || ""} onChange={(e) => setMapping({ ...mapping, [field.id]: e.target.value })}>
+                  <select className="w-1/2 text-xs border rounded-lg p-2 bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" value={mapping[field.id] || ""} onChange={(e) => setMapping({ ...mapping, [field.id]: e.target.value })}>
                     <option value="">-- Lewati --</option>
-                    {csvHeaders.map((h) => (
+                    {columnHeaders.map((h) => (
                       <option key={h} value={h}>
                         {h}
                       </option>
@@ -475,7 +482,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
             </div>
             <div className="pt-4 flex gap-2">
               <Button variant="secondary" className="flex-1" onClick={() => setImportStep(1)}>
-                Kembali
+                Ganti File
               </Button>
               <Button className="flex-1" onClick={() => setImportStep(3)} disabled={!mapping.name}>
                 Lanjut
@@ -486,32 +493,33 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
         {importStep === 3 && (
           <div className="space-y-6 text-center">
-            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl">
-              <i className="fa-solid fa-check-double"></i>
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+              <i className="fa-solid fa-cloud-arrow-up"></i>
             </div>
             <div>
-              <h3 className="text-xl font-bold">Siap Impor!</h3>
+              <h3 className="text-xl font-bold text-slate-900">Konfirmasi Import</h3>
               <p className="text-sm text-slate-500">
-                Ada <b>{csvData.length}</b> barang ditemukan dalam file Anda.
+                Ditemukan <b>{excelRows.length}</b> baris data yang siap dipindahkan ke Beris POS.
               </p>
             </div>
-            <div className="p-4 bg-slate-50 border rounded-xl text-left">
-              <p className="text-xs font-bold text-slate-400 mb-2 uppercase">Preview Data</p>
+            <div className="p-4 bg-slate-900 text-white rounded-2xl text-left border border-slate-800 shadow-xl">
+              <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">Preview 5 Barang Teratas</p>
               <div className="space-y-1 max-h-32 overflow-y-auto pr-2 no-scrollbar">
-                {csvData.slice(0, 5).map((row, i) => (
-                  <div key={i} className="text-xs text-slate-700 py-1 border-b border-slate-100 truncate">
-                    {row[csvHeaders.indexOf(mapping.name)]}
+                {excelRows.slice(0, 5).map((row, i) => (
+                  <div key={i} className="text-xs py-1.5 border-b border-slate-800 last:border-0 flex justify-between gap-2">
+                    <span className="truncate flex-1 opacity-90">{row[columnHeaders.indexOf(mapping.name)]}</span>
+                    <span className="text-emerald-400 font-mono">Rp {Number(row[columnHeaders.indexOf(mapping.price)] || 0).toLocaleString("id-ID")}</span>
                   </div>
                 ))}
-                {csvData.length > 5 && <p className="text-[10px] text-slate-400 mt-1">...dan {csvData.length - 5} barang lainnya.</p>}
+                {excelRows.length > 5 && <p className="text-[10px] text-slate-500 mt-2 text-center">...dan {excelRows.length - 5} barang lainnya.</p>}
               </div>
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" className="flex-1" onClick={() => setImportStep(2)} disabled={isImporting}>
-                Batal
+                Kembali
               </Button>
-              <Button className="flex-1" onClick={executeImport} disabled={isImporting}>
-                {isImporting ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : "Mulai Impor Sekarang"}
+              <Button className="flex-1 shadow-lg shadow-blue-500/20" onClick={executeImport} disabled={isImporting}>
+                {isImporting ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : "Import Sekarang"}
               </Button>
             </div>
           </div>
