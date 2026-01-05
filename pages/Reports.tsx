@@ -63,8 +63,6 @@ const Reports: React.FC = () => {
     });
 
     const productMap = new Map<string, { name: string; qty: number; revenue: number }>();
-    const categoryMap = new Map<string, number>();
-
     filteredTx.forEach((t) => {
       t.items.forEach((item) => {
         const existing = productMap.get(item.productName) || { name: item.productName, qty: 0, revenue: 0 };
@@ -93,46 +91,60 @@ const Reports: React.FC = () => {
     setAiError(null);
 
     try {
-      // 1. Check for AI Studio Key Selection Capability
+      // 1. Integrasi API Key Selector (Wajib buat Gemini 3)
       const aistudio = (window as any).aistudio;
       if (aistudio) {
         const hasKey = await aistudio.hasSelectedApiKey();
-        // Jika di browser tidak ada key, atau process.env.API_KEY kosong, buka selector
-        if (!hasKey || !process.env.API_KEY) {
+        if (!hasKey) {
           await aistudio.openSelectKey();
+          // Lanjut jalan setelah prompt dibuka (Race condition mitigation)
         }
       }
 
-      // 2. Initialize Gemini right before calling
+      // 2. Inisialisasi AI dengan model Gemini 3 terbaru
+      // Menggunakan process.env.API_KEY yang akan diisi secara otomatis oleh Vercel atau Selector
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Anda adalah 'Cak Warung', konsultan bisnis gaul dan ahli untuk warung kelontong di Indonesia.
-Berdasarkan data warung saya periode ${range === "today" ? "Hari Ini" : range === "week" ? "Seminggu Terakhir" : "Bulan Ini"}:
+
+      const prompt = `Anda adalah 'Cak Warung', konsultan bisnis warung kelontong legendaris yang bicaranya santai tapi sangat cerdas.
+Data Warung (${range}):
 - Omzet: ${formatRp(stats.totalRevenue)}
 - Untung: ${formatRp(stats.totalProfit)}
 - Transaksi: ${stats.totalTransactions}
-- Terlaris: ${stats.topProducts.map((p) => p.name).join(", ")}
+- Top Produk: ${stats.topProducts.map((p) => p.name).join(", ")}
 
-Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesia gaul pengusaha. Pakai bullet points.`;
+Berikan 3 saran strategis yang 'out-of-the-box' untuk meningkatkan keuntungan. 
+Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses. Pakai bahasa Indonesia santai.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
+        config: {
+          // Menambahkan thinking budget agar AI berpikir lebih dalam (khusus Gemini 3)
+          thinkingConfig: { thinkingBudget: 4000 },
+        },
       });
 
-      if (!response.text) throw new Error("Kosong");
+      if (!response.text) throw new Error("AI tidak memberikan jawaban.");
       setAiResponse(response.text);
     } catch (e: any) {
-      console.error("Gemini Error:", e);
-      // Handle race conditions or invalid keys
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API key")) {
-        setAiError("Kunci API bermasalah. Silakan klik 'Pilih Kunci' untuk memperbarui.");
-        const aistudio = (window as any).aistudio;
-        if (aistudio) await aistudio.openSelectKey();
+      console.error("AI Error Details:", e);
+
+      // Jika error karena kunci tidak ditemukan/invalid
+      if (e.message?.toLowerCase().includes("not found") || e.message?.toLowerCase().includes("api key")) {
+        setAiError("Kunci API belum terpasang atau salah. Klik tombol di bawah untuk memasukkan kunci Gemini kamu.");
       } else {
-        setAiError("Gagal terhubung. Pastikan internet lancar dan kunci API sudah benar di Vercel, lalu coba lagi.");
+        setAiError("Gagal terhubung ke otak AI. Cek koneksi internetmu atau coba lagi nanti, Bro.");
       }
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const openKeySelector = async () => {
+    const aistudio = (window as any).aistudio;
+    if (aistudio) {
+      await aistudio.openSelectKey();
+      handleAskAI(); // Coba lagi setelah pilih kunci
     }
   };
 
@@ -141,10 +153,11 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
     try {
       const doc = new jsPDF();
       doc.setFontSize(20);
-      doc.text(`Laporan ${settings.storeName}`, 14, 20);
+      doc.text(`Laporan Penjualan - ${settings.storeName}`, 14, 20);
       doc.setFontSize(12);
-      doc.text(`Omzet: ${formatRp(stats.totalRevenue)}`, 14, 35);
-      doc.text(`Untung: ${formatRp(stats.totalProfit)}`, 14, 45);
+      doc.text(`Periode: ${range}`, 14, 30);
+      doc.text(`Total Omzet: ${formatRp(stats.totalRevenue)}`, 14, 45);
+      doc.text(`Total Untung: ${formatRp(stats.totalProfit)}`, 14, 55);
       doc.save(`Laporan_${range}.pdf`);
     } catch (e) {
       alert("Gagal cetak PDF");
@@ -197,8 +210,9 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
           </Card>
 
           <Card className="lg:col-span-2 p-0 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
               <h3 className="font-bold text-slate-800 text-sm">Top 5 Produk Terlaris</h3>
+              <Badge color="blue">{filteredTx.length} Transaksi</Badge>
             </div>
             <div className="p-4 space-y-3">
               {stats.topProducts.map((p, i) => (
@@ -207,10 +221,13 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
                     <span className="text-slate-400 font-bold">{i + 1}.</span>
                     <span className="font-bold text-slate-700">{p.name}</span>
                   </div>
-                  <Badge color="blue">{p.qty} terjual</Badge>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-slate-400">{formatRp(p.revenue)}</span>
+                    <Badge color="blue">{p.qty} terjual</Badge>
+                  </div>
                 </div>
               ))}
-              {stats.topProducts.length === 0 && <p className="text-center py-4 text-slate-400 text-sm italic">Belum ada data penjualan</p>}
+              {stats.topProducts.length === 0 && <p className="text-center py-10 text-slate-400 text-sm italic">Belum ada data penjualan pada periode ini.</p>}
             </div>
           </Card>
         </div>
@@ -218,10 +235,13 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
         <div className="space-y-6">
           <Card className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white border-none shadow-xl shadow-blue-200 group overflow-hidden relative">
             <div className="relative z-10">
-              <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2 block">Analisis Cerdas</span>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block">AI Konsultan Aktif</span>
+              </div>
               <h4 className="text-lg font-bold mb-3">Tanya Cak Warung</h4>
-              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Dapatkan saran jitu dari AI untuk tingkatkan omzet warungmu hari ini!</p>
-              <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold hover:bg-blue-50" icon="fa-wand-magic-sparkles">
+              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Biar AI yang mikirin strategi dagangmu biar makin cuan!</p>
+              <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold hover:bg-blue-50 py-3" icon="fa-wand-magic-sparkles">
                 Minta Saran Bisnis
               </Button>
             </div>
@@ -234,7 +254,7 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
               {isProcessing ? "Memproses..." : "Cetak PDF"}
             </Button>
             <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-file-excel">
-              Ekspor Excel
+              Ekspor CSV (Excel)
             </Button>
           </Card>
         </div>
@@ -245,7 +265,7 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
         onClose={() => setShowAIModal(false)}
         title="Konsultan Cak Warung"
         footer={
-          <Button variant="secondary" onClick={() => setShowAIModal(false)}>
+          <Button variant="secondary" className="w-full" onClick={() => setShowAIModal(false)}>
             Mantap, Cak!
           </Button>
         }
@@ -257,8 +277,8 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
                 <i className={`fa-solid ${aiLoading ? "fa-spinner fa-spin" : "fa-robot"}`}></i>
               </div>
               <div>
-                <span className="font-black block leading-none">Cak Warung AI</span>
-                <span className="text-[10px] uppercase font-bold text-indigo-400">{aiLoading ? "Sedang Berpikir..." : "Analisis Selesai"}</span>
+                <span className="font-black block leading-none text-sm">Cak Warung AI</span>
+                <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-tighter">{aiLoading ? "Sedang Menerawang..." : "Analisis Selesai"}</span>
               </div>
             </div>
 
@@ -269,21 +289,26 @@ Berikan 3 saran bisnis singkat, santai, dan sangat praktis dalam bahasa Indonesi
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
                 </div>
-                <p className="text-xs text-indigo-600 font-medium italic">Bentar, lagi nerawang data warungmu...</p>
+                <p className="text-[10px] text-indigo-600 font-bold italic">Bentar, lagi mikir keras...</p>
               </div>
             ) : aiError ? (
-              <div className="text-center py-4">
-                <i className="fa-solid fa-circle-exclamation text-2xl text-amber-500 mb-2"></i>
-                <p className="text-sm text-slate-600 px-4">{aiError}</p>
-                <Button size="sm" variant="outline" className="mt-4" onClick={handleAskAI}>
-                  Coba Lagi
-                </Button>
+              <div className="text-center py-4 bg-white/50 rounded-xl border border-amber-100">
+                <i className="fa-solid fa-triangle-exclamation text-3xl text-amber-500 mb-3"></i>
+                <p className="text-xs text-slate-700 px-6 leading-relaxed mb-4">{aiError}</p>
+                <div className="flex flex-col gap-2 px-6">
+                  <Button size="sm" variant="primary" onClick={openKeySelector}>
+                    Daftarkan API Key Baru
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={handleAskAI}>
+                    Coba Lagi
+                  </Button>
+                </div>
               </div>
             ) : (
-              <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">{aiResponse}</div>
+              <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium text-sm">{aiResponse}</div>
             )}
           </div>
-          <p className="text-[10px] text-slate-400 italic text-center px-4">*Saran dihasilkan otomatis oleh AI Gemini.</p>
+          <p className="text-[9px] text-slate-400 italic text-center px-4 leading-tight">*Saran dihasilkan otomatis oleh AI. Jangan lupa tetap gunakan insting dagang kamu sendiri ya, Bro!</p>
         </div>
       </Modal>
     </div>
