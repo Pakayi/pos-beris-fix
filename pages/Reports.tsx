@@ -83,6 +83,15 @@ const Reports: React.FC = () => {
 
   const formatRp = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
+  const openKeySelector = async () => {
+    const aistudio = (window as any).aistudio;
+    if (aistudio) {
+      await aistudio.openSelectKey();
+      // Lanjutkan panggil AI setelah selector dibuka (mengikuti aturan race condition)
+      handleAskAI();
+    }
+  };
+
   // --- AI ANALYSIS FEATURE ---
   const handleAskAI = async () => {
     setShowAIModal(true);
@@ -91,18 +100,17 @@ const Reports: React.FC = () => {
     setAiError(null);
 
     try {
-      // 1. Integrasi API Key Selector (Wajib buat Gemini 3)
+      // 1. Cek kunci API via AI Studio selector
       const aistudio = (window as any).aistudio;
       if (aistudio) {
         const hasKey = await aistudio.hasSelectedApiKey();
         if (!hasKey) {
           await aistudio.openSelectKey();
-          // Lanjut jalan setelah prompt dibuka (Race condition mitigation)
+          // Lanjut proses (asumsi pemilihan sukses sesuai aturan)
         }
       }
 
-      // 2. Inisialisasi AI dengan model Gemini 3 terbaru
-      // Menggunakan process.env.API_KEY yang akan diisi secara otomatis oleh Vercel atau Selector
+      // 2. Inisialisasi GoogleGenAI sesaat sebelum memanggil (agar pakai key terbaru)
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const prompt = `Anda adalah 'Cak Warung', konsultan bisnis warung kelontong legendaris yang bicaranya santai tapi sangat cerdas.
@@ -112,39 +120,36 @@ Data Warung (${range}):
 - Transaksi: ${stats.totalTransactions}
 - Top Produk: ${stats.topProducts.map((p) => p.name).join(", ")}
 
-Berikan 3 saran strategis yang 'out-of-the-box' untuk meningkatkan keuntungan. 
-Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses. Pakai bahasa Indonesia santai.`;
+Berikan 3 saran strategis yang 'out-of-the-box' untuk meningkatkan keuntungan hari ini. 
+Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses dan gaul. Pakai bahasa Indonesia santai. Gunakan bullet points.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
-          // Menambahkan thinking budget agar AI berpikir lebih dalam (khusus Gemini 3)
           thinkingConfig: { thinkingBudget: 4000 },
         },
       });
 
-      if (!response.text) throw new Error("AI tidak memberikan jawaban.");
+      if (!response.text) throw new Error("Kosong");
       setAiResponse(response.text);
     } catch (e: any) {
       console.error("AI Error Details:", e);
 
-      // Jika error karena kunci tidak ditemukan/invalid
-      if (e.message?.toLowerCase().includes("not found") || e.message?.toLowerCase().includes("api key")) {
-        setAiError("Kunci API belum terpasang atau salah. Klik tombol di bawah untuk memasukkan kunci Gemini kamu.");
+      // Jika error karena kunci tidak ditemukan atau "Requested entity was not found"
+      if (e.message?.includes("Requested entity was not found") || e.message?.toLowerCase().includes("not found") || e.message?.toLowerCase().includes("api key")) {
+        setAiError("Kunci API tidak valid atau belum disetel. Klik 'Daftarkan API Key' untuk memasukkan kunci Gemini kamu.");
+
+        // Sesuai aturan: jika "Requested entity was not found", reset dan minta pilih key lagi
+        const aistudio = (window as any).aistudio;
+        if (aistudio && e.message?.includes("Requested entity was not found")) {
+          await aistudio.openSelectKey();
+        }
       } else {
-        setAiError("Gagal terhubung ke otak AI. Cek koneksi internetmu atau coba lagi nanti, Bro.");
+        setAiError("Gagal terhubung ke Cak Warung AI. Pastikan internet lancar atau coba lagi nanti ya, Bro.");
       }
     } finally {
       setAiLoading(false);
-    }
-  };
-
-  const openKeySelector = async () => {
-    const aistudio = (window as any).aistudio;
-    if (aistudio) {
-      await aistudio.openSelectKey();
-      handleAskAI(); // Coba lagi setelah pilih kunci
     }
   };
 
@@ -240,7 +245,7 @@ Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses. Pakai bahasa Indo
                 <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block">AI Konsultan Aktif</span>
               </div>
               <h4 className="text-lg font-bold mb-3">Tanya Cak Warung</h4>
-              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Biar AI yang mikirin strategi dagangmu biar makin cuan!</p>
+              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Dapatkan saran strategis agar jualanmu hari ini makin laku keras!</p>
               <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold hover:bg-blue-50 py-3" icon="fa-wand-magic-sparkles">
                 Minta Saran Bisnis
               </Button>
@@ -308,7 +313,7 @@ Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses. Pakai bahasa Indo
               <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium text-sm">{aiResponse}</div>
             )}
           </div>
-          <p className="text-[9px] text-slate-400 italic text-center px-4 leading-tight">*Saran dihasilkan otomatis oleh AI. Jangan lupa tetap gunakan insting dagang kamu sendiri ya, Bro!</p>
+          <p className="text-[9px] text-slate-400 italic text-center px-4 leading-tight">*Saran dihasilkan otomatis oleh AI Gemini. Tetap andalkan insting dagang kamu ya, Bro!</p>
         </div>
       </Modal>
     </div>
