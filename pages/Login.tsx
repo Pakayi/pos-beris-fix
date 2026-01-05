@@ -16,6 +16,16 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Fungsi untuk generate ID Warung yang unik dan rapi
+  const generateUniqueWarungId = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Tanpa huruf/angka membingungkan (O, 0, I, 1)
+    let result = "W-";
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -42,16 +52,20 @@ const Login: React.FC = () => {
         await updateProfile(userCredential.user, { displayName });
 
         // Inisialisasi Profil
+        // Jika owner, generate ID warung baru. Jika staff, pakai input dari owner.
+        const newWarungId = role === "owner" ? generateUniqueWarungId() : warungIdInput.trim();
+
         const profile: UserProfile = {
           uid: userCredential.user.uid,
           email: email,
           displayName: displayName,
           role: role,
-          warungId: role === "owner" ? userCredential.user.uid : warungIdInput.trim(),
+          warungId: newWarungId,
         };
         await db.saveUserProfile(profile);
       } else {
         await signInWithEmailAndPassword(auth, email, password);
+        // Profil akan di-load otomatis oleh setupCloudSync di db.ts
       }
     } catch (err: any) {
       console.error("Auth Error:", err.code, err.message);
@@ -78,19 +92,28 @@ const Login: React.FC = () => {
     setError("");
     try {
       const result = await signInWithPopup(auth, provider);
-      const existingProfile = db.getUserProfile();
-      if (!existingProfile) {
-        // Default Google Login sebagai owner jika belum ada profil
+
+      // Cek apakah user sudah punya profil di Firestore
+      const userDoc = await getDoc(doc(db_fs, "users", result.user.uid));
+
+      if (!userDoc.exists()) {
+        // Jika belum ada profil, buat profil baru sebagai Owner dengan ID Warung baru (Format W-XXXXXX)
         const profile: UserProfile = {
           uid: result.user.uid,
           email: result.user.email || "",
           displayName: result.user.displayName || "User",
           role: "owner",
-          warungId: result.user.uid,
+          warungId: generateUniqueWarungId(),
         };
         await db.saveUserProfile(profile);
+      } else {
+        // Jika sudah ada, sinkronkan ke local storage
+        const profileData = userDoc.data() as UserProfile;
+        localStorage.setItem("warung_user_profile", JSON.stringify(profileData));
+        window.dispatchEvent(new Event("profile-updated"));
       }
     } catch (err: any) {
+      console.error("Google Auth Error:", err);
       if (err.code !== "auth/popup-closed-by-user") {
         setError("Gagal login dengan Google.");
       }
