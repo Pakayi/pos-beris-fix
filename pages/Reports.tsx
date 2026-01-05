@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { db } from "../services/db";
 import { Transaction, Product, AppSettings } from "../types";
-import { Card, Button, Badge, Modal } from "../components/UI";
+import { Card, Button, Badge } from "../components/UI";
 import { jsPDF } from "jspdf";
-import { GoogleGenAI } from "@google/genai";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 type DateRange = "today" | "week" | "month" | "all";
 
@@ -15,12 +13,6 @@ const Reports: React.FC = () => {
   const [filteredTx, setFilteredTx] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<AppSettings>(db.getSettings());
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // AI State
-  const [showAIModal, setShowAIModal] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResponse, setAiResponse] = useState("");
-  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     setTransactions(db.getTransactions());
@@ -82,84 +74,6 @@ const Reports: React.FC = () => {
   }, [filteredTx]);
 
   const formatRp = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
-
-  const openKeySelector = async () => {
-    const aistudio = (window as any).aistudio;
-    if (aistudio) {
-      try {
-        await aistudio.openSelectKey();
-        handleAskAI();
-      } catch (e) {
-        setAiError("Gagal membuka pemilih kunci otomatis.");
-      }
-    } else {
-      // Kasus jika di Vercel (luar AI Studio)
-      setAiError("Bro, karena kamu buka di Vercel, kamu harus masukin API Key-nya di 'Environment Variables' dashboard Vercel dengan nama API_KEY. Baru habis itu di-redeploy.");
-    }
-  };
-
-  // --- AI ANALYSIS FEATURE ---
-  const handleAskAI = async () => {
-    setShowAIModal(true);
-    setAiLoading(true);
-    setAiResponse("");
-    setAiError(null);
-
-    try {
-      // Ambil key dari environment
-      const apiKey = process.env.API_KEY;
-
-      if (!apiKey || apiKey === "undefined") {
-        // Cek apakah ada aistudio helper
-        const aistudio = (window as any).aistudio;
-        if (aistudio) {
-          const hasKey = await aistudio.hasSelectedApiKey();
-          if (!hasKey) {
-            await aistudio.openSelectKey();
-            // Lanjut (asumsi user pilih key)
-          }
-        } else {
-          throw new Error("API_KEY_MISSING");
-        }
-      }
-
-      // Inisialisasi GoogleGenAI (Wajib pakai process.env.API_KEY)
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-      const prompt = `Anda adalah 'Cak Warung', konsultan bisnis warung kelontong cerdas.
-Data Warung (${range}):
-- Omzet: ${formatRp(stats.totalRevenue)}
-- Untung: ${formatRp(stats.totalProfit)}
-- Transaksi: ${stats.totalTransactions}
-- Top Produk: ${stats.topProducts.map((p) => p.name).join(", ")}
-
-Berikan 3 saran strategis 'out-of-the-box' untuk meningkatkan keuntungan. 
-Bahasa Indonesia santai ala pemilik warung sukses.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          thinkingConfig: { thinkingBudget: 4000 },
-        },
-      });
-
-      if (!response.text) throw new Error("EMPTY_RESPONSE");
-      setAiResponse(response.text);
-    } catch (e: any) {
-      console.error("AI Error:", e);
-
-      if (e.message === "API_KEY_MISSING") {
-        setAiError("Kunci API (API_KEY) tidak ditemukan di sistem Vercel kamu, Bro.");
-      } else if (e.message?.includes("Requested entity was not found")) {
-        setAiError("Kunci API yang kamu pakai tidak punya akses ke model Gemini 3. Pastikan API Key-mu dari Google Cloud Project yang sudah aktif billing-nya.");
-      } else {
-        setAiError("Waduh, koneksi ke otak AI lagi macet. Coba klik 'Coba Lagi' atau cek kuncimu di Vercel.");
-      }
-    } finally {
-      setAiLoading(false);
-    }
-  };
 
   const handlePrintPDF = () => {
     setIsProcessing(true);
@@ -246,84 +160,31 @@ Bahasa Indonesia santai ala pemilik warung sukses.`;
         </div>
 
         <div className="space-y-6">
-          <Card className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white border-none shadow-xl shadow-blue-200 group overflow-hidden relative">
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block">AI Konsultan Aktif</span>
-              </div>
-              <h4 className="text-lg font-bold mb-3">Tanya Cak Warung</h4>
-              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Biar AI yang mikirin strategi jualanmu biar makin cuan!</p>
-              <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold hover:bg-blue-50 py-3" icon="fa-wand-magic-sparkles">
-                Minta Saran Bisnis
-              </Button>
-            </div>
-            <i className="fa-solid fa-robot absolute -bottom-4 -right-4 text-8xl text-white/10 group-hover:scale-110 transition-transform"></i>
-          </Card>
-
           <Card className="p-6 space-y-4">
             <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2">Aksi Laporan</h3>
-            <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-circle-notch fa-spin" : "fa-file-pdf"}>
+            <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-solid fa-circle-notch fa-spin" : "fa-solid fa-file-pdf"}>
               {isProcessing ? "Memproses..." : "Cetak PDF"}
             </Button>
-            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-file-excel">
+            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-solid fa-file-excel">
               Ekspor CSV (Excel)
             </Button>
           </Card>
-        </div>
-      </div>
 
-      <Modal
-        isOpen={showAIModal}
-        onClose={() => setShowAIModal(false)}
-        title="Konsultan Cak Warung"
-        footer={
-          <Button variant="secondary" className="w-full" onClick={() => setShowAIModal(false)}>
-            Siap, Cak!
-          </Button>
-        }
-      >
-        <div className="space-y-4">
-          <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-inner min-h-[150px]">
-            <div className="flex items-center gap-3 mb-4 text-indigo-700">
-              <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg">
-                <i className={`fa-solid ${aiLoading ? "fa-spinner fa-spin" : "fa-robot"}`}></i>
+          <Card className="p-6 bg-slate-50 border-slate-200">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Ringkasan Periode</h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Transaksi</span>
+                <span className="font-bold text-slate-700">{stats.totalTransactions}</span>
               </div>
-              <div>
-                <span className="font-black block leading-none text-sm">Cak Warung AI</span>
-                <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-tighter">{aiLoading ? "Sedang Menerawang..." : "Analisis Selesai"}</span>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Avg / Transaksi</span>
+                <span className="font-bold text-slate-700">{formatRp(stats.totalTransactions ? stats.totalRevenue / stats.totalTransactions : 0)}</span>
               </div>
             </div>
-
-            {aiLoading ? (
-              <div className="flex flex-col items-center justify-center py-6 space-y-4">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
-                </div>
-                <p className="text-[10px] text-indigo-600 font-bold italic">Lagi mikir keras nih, sabar ya Bro...</p>
-              </div>
-            ) : aiError ? (
-              <div className="text-center py-4 bg-white/50 rounded-xl border border-amber-100">
-                <i className="fa-solid fa-triangle-exclamation text-3xl text-amber-500 mb-3"></i>
-                <p className="text-xs text-slate-700 px-6 leading-relaxed mb-4 font-bold">{aiError}</p>
-                <div className="flex flex-col gap-2 px-6">
-                  <Button size="sm" variant="primary" onClick={openKeySelector}>
-                    Coba Daftarkan Ulang
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={handleAskAI}>
-                    Coba Lagi
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium text-sm">{aiResponse}</div>
-            )}
-          </div>
-          <p className="text-[9px] text-slate-400 italic text-center px-4 leading-tight">*Saran dihasilkan otomatis oleh AI Gemini. Tetap andalkan insting dagang kamu ya, Bro!</p>
+          </Card>
         </div>
-      </Modal>
+      </div>
     </div>
   );
 };

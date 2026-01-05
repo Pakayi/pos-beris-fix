@@ -3,16 +3,12 @@ import { db } from "../services/db";
 import { Product, ProductUnit } from "../types";
 import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { GoogleGenAI, Type } from "@google/genai";
 
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState("");
-
-  // AI State
-  const [isAiFilling, setIsAiFilling] = useState(false);
 
   // Scanner State
   const [showScanner, setShowScanner] = useState(false);
@@ -142,61 +138,6 @@ const Products: React.FC = () => {
     setEditingProduct({ ...editingProduct, units: newUnits });
   };
 
-  // --- AI SMART FILL LOGIC ---
-  const handleAiSmartFill = async () => {
-    if (!editingProduct.name) {
-      alert("Masukkan nama produk dulu, Bro!");
-      return;
-    }
-
-    setIsAiFilling(true);
-    try {
-      const aistudio = (window as any).aistudio;
-      if (aistudio && !(await aistudio.hasSelectedApiKey())) {
-        await aistudio.openSelectKey();
-      }
-
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analisis produk ini: "${editingProduct.name}".
-        Tentukan kategori yang paling cocok (misal: Sembako, Minuman, Snack, Sabun, Rokok) 
-        dan berikan estimasi harga jual wajar untuk 1 pcs/satuan dasar dalam rupiah.
-        Berikan jawaban dalam JSON format.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              category: { type: Type.STRING },
-              suggestedPrice: { type: Type.NUMBER },
-              suggestedBaseUnit: { type: Type.STRING },
-            },
-            required: ["category", "suggestedPrice", "suggestedBaseUnit"],
-          },
-        },
-      });
-
-      const data = JSON.parse(response.text || "{}");
-
-      setEditingProduct((prev) => ({
-        ...prev,
-        category: data.category || prev.category,
-        baseUnit: data.suggestedBaseUnit || prev.baseUnit,
-        units: prev.units.map((u, i) => (i === 0 ? { ...u, price: data.suggestedPrice || u.price, name: data.suggestedBaseUnit || u.name } : u)),
-      }));
-    } catch (e: any) {
-      console.error("AI Error:", e);
-      if (e.message?.includes("Requested entity was not found")) {
-        const aistudio = (window as any).aistudio;
-        if (aistudio) await aistudio.openSelectKey();
-      }
-      alert("AI Cak Warung lagi meriang, isi manual dulu ya!");
-    } finally {
-      setIsAiFilling(false);
-    }
-  };
-
   const filtered = products.filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.includes(searchTerm));
 
   return (
@@ -211,7 +152,7 @@ const Products: React.FC = () => {
             setEditingProduct({ units: [{ name: "Pcs", conversion: 1, price: 0, buyPrice: 0 }], stock: "", minStockAlert: "" });
             setIsModalOpen(true);
           }}
-          icon="fa-plus"
+          icon="fa-solid fa-plus"
         >
           Tambah Produk
         </Button>
@@ -295,15 +236,7 @@ const Products: React.FC = () => {
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingProduct.id ? "Edit Produk" : "Tambah Produk"}>
         <div className="space-y-4">
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <Input label="Nama Produk" value={editingProduct.name || ""} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} placeholder="Contoh: Indomie Goreng" />
-            </div>
-            <Button type="button" variant="secondary" size="md" onClick={handleAiSmartFill} disabled={isAiFilling || !editingProduct.name} className="bg-indigo-50 text-indigo-700 border-indigo-100 h-[38px]">
-              <i className={`fa-solid ${isAiFilling ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"} mr-1`}></i>
-              {isAiFilling ? "Mikir..." : "AI"}
-            </Button>
-          </div>
+          <Input label="Nama Produk" value={editingProduct.name || ""} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} placeholder="Contoh: Indomie Goreng" />
 
           <div className="grid grid-cols-2 gap-3">
             <Input label="Kategori" value={editingProduct.category || ""} onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })} />

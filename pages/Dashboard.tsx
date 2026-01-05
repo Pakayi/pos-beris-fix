@@ -3,7 +3,6 @@ import { db } from "../services/db";
 import { Transaction, Product } from "../types";
 import { Card, Toast } from "../components/UI";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { GoogleGenAI } from "@google/genai";
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState({
@@ -13,7 +12,6 @@ const Dashboard: React.FC = () => {
     lowStockCount: 0,
   });
   const [chartData, setChartData] = useState<any[]>([]);
-  const [aiTip, setAiTip] = useState<string | null>(null);
 
   // Toast State
   const [showLowStockToast, setShowLowStockToast] = useState(false);
@@ -56,29 +54,7 @@ const Dashboard: React.FC = () => {
       lowStockCount: lowStock,
     });
     setChartData(last7Days);
-
-    // Fetch Daily AI Tip
-    fetchAiTip();
   }, []);
-
-  const fetchAiTip = async () => {
-    try {
-      // Hanya panggil jika ada API_KEY
-      if (!process.env.API_KEY || process.env.API_KEY === "undefined") return;
-
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const hours = new Date().getHours();
-      const timeOfDay = hours < 11 ? "pagi" : hours < 16 ? "siang" : hours < 19 ? "sore" : "malam";
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Berikan 1 kalimat tips bisnis warung kelontong yang singkat dan memotivasi untuk waktu ${timeOfDay} hari ini. Gaya bicara santai. Maksimal 15 kata.`,
-      });
-      setAiTip(response.text || null);
-    } catch (e) {
-      console.warn("AI Tip failed:", e);
-    }
-  };
 
   const formatRp = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
 
@@ -94,20 +70,6 @@ const Dashboard: React.FC = () => {
           {new Date().toLocaleDateString("id-ID", { dateStyle: "full" })}
         </div>
       </div>
-
-      {/* AI Insight Banner */}
-      {aiTip && (
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 text-white shadow-lg flex items-center gap-4 relative overflow-hidden group">
-          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
-            <i className="fa-solid fa-wand-magic-sparkles animate-pulse"></i>
-          </div>
-          <div className="flex-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mb-0.5">Saran Cak Warung</p>
-            <p className="text-sm font-medium italic">"{aiTip}"</p>
-          </div>
-          <i className="fa-solid fa-robot absolute -right-4 -bottom-4 text-7xl opacity-10 group-hover:scale-110 transition-transform"></i>
-        </div>
-      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -160,7 +122,7 @@ const Dashboard: React.FC = () => {
                 <i className="fa-solid fa-box"></i>
               </div>
               <div className="text-left">
-                <div className="font-semibold">Tambah Produk</div>
+                <div className="font-semibold">Kelola Produk</div>
                 <div className="text-xs opacity-80">Update stok barang</div>
               </div>
             </button>
