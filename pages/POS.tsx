@@ -340,7 +340,7 @@ const POS: React.FC = () => {
             <i className="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
             <Input placeholder="Cari produk atau scan..." className="pl-10" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <Button onClick={() => setShowScanner(true)} variant="secondary" icon="fa-barcode">
+          <Button onClick={() => setShowScanner(true)} variant="secondary" icon="fa-solid fa-barcode">
             Scan
           </Button>
         </div>
@@ -425,6 +425,9 @@ const POS: React.FC = () => {
             <div className="space-y-4">
               <Input type="number" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} label="Uang Diterima" placeholder="0" className="text-lg" autoFocus />
               <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setAmountPaid(calculations.total.toString())} className="col-span-2 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-black shadow-sm">
+                  UANG PAS
+                </button>
                 {[50000, 100000].map((val) => (
                   <button key={val} onClick={() => setAmountPaid(val.toString())} className="py-2 bg-gray-100 rounded-lg text-xs font-bold">
                     Rp {val.toLocaleString("id-ID")}
@@ -504,13 +507,13 @@ const POS: React.FC = () => {
             </div>
           )}
           <div className="grid grid-cols-2 gap-3 pt-4">
-            <Button onClick={handlePrint} variant="outline" icon="fa-print">
+            <Button onClick={handlePrint} variant="outline" icon="fa-solid fa-print">
               Cetak Struk
             </Button>
-            <Button onClick={handleDownloadPDF} variant="outline" icon="fa-file-pdf">
+            <Button onClick={handleDownloadPDF} variant="outline" icon="fa-solid fa-file-pdf">
               Simpan PDF
             </Button>
-            <Button onClick={handleShareWA} variant="outline" icon="fa-whatsapp" className="col-span-2">
+            <Button onClick={handleShareWA} variant="outline" icon="fa-brands fa-whatsapp" className="col-span-2 text-green-600 border-green-200 hover:bg-green-50">
               WhatsApp
             </Button>
             <Button onClick={() => setShowSuccessModal(false)} className="col-span-2 py-3 mt-2">
