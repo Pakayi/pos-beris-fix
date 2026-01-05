@@ -49,21 +49,15 @@ const Settings: React.FC = () => {
     }
   };
 
-  // Fungsi migrasi untuk akun lama yang ID-nya masih UID panjang
   const handleGenerateNewWarungId = async () => {
     if (!profile || profile.role !== 'owner') return;
-    
-    if (confirm("Ingin mengubah ID Warung menjadi format profesional (W-XXXXXX)? ID lama Anda tidak akan berlaku lagi untuk pendaftaran staff baru.")) {
+    if (confirm("Ingin mengubah ID Warung menjadi format profesional?")) {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let newId = 'W-';
-      for (let i = 0; i < 6; i++) {
-        newId += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      
+      for (let i = 0; i < 6; i++) newId += chars.charAt(Math.floor(Math.random() * chars.length));
       const updatedProfile = { ...profile, warungId: newId };
       await db.saveUserProfile(updatedProfile);
       setProfile(updatedProfile);
-      alert("ID Warung berhasil diperbarui ke: " + newId);
     }
   };
 
@@ -93,10 +87,6 @@ const Settings: React.FC = () => {
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 500 * 1024) {
-        alert("Maksimal 500KB.");
-        return;
-      }
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64Logo = reader.result as string;
@@ -109,7 +99,6 @@ const Settings: React.FC = () => {
     }
   };
 
-  // Cek apakah ID saat ini adalah format lama (UID biasanya panjang > 20 karakter tanpa tanda '-')
   const isOldIdFormat = profile?.warungId && profile.warungId.length > 15 && !profile.warungId.startsWith('W-');
 
   return (
@@ -119,7 +108,6 @@ const Settings: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">Pengaturan</h1>
           <div className="flex items-center gap-2 mt-1">
              <Badge color={profile?.role === 'owner' ? 'blue' : 'green'}>Role: {profile?.role?.toUpperCase()}</Badge>
-             <p className="text-slate-500 text-xs">Kelola identitas dan operasional toko</p>
           </div>
         </div>
         <Button onClick={handleSave} icon="fa-save" className={isSaved ? "bg-green-600" : ""}>
@@ -129,76 +117,54 @@ const Settings: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-6">
-           {/* Multi-User / Warung ID Card */}
-           <Card className="p-6 bg-gradient-to-br from-slate-800 to-slate-900 text-white border-none shadow-xl relative overflow-hidden">
+           <Card className="p-6 bg-slate-900 text-white border-none shadow-xl relative overflow-hidden">
              <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-sm uppercase tracking-widest text-blue-400">Warung ID</h3>
                 <i className="fa-solid fa-users text-slate-600"></i>
              </div>
-             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                Gunakan ID ini untuk mendaftarkan akun Kasir (Staff) agar data produk dan transaksi tersinkronisasi.
-             </p>
              <div className="flex gap-2 mb-3">
                 <div className={`flex-1 bg-slate-700/50 border ${isOldIdFormat ? 'border-red-500/50' : 'border-slate-600'} rounded-lg px-3 py-2 font-mono text-sm flex items-center overflow-hidden`}>
                    <span className="truncate">{profile?.warungId || 'Loading...'}</span>
                 </div>
-                <Button 
-                  onClick={copyWarungId} 
-                  variant="secondary" 
-                  size="sm" 
-                  className="bg-slate-600 hover:bg-slate-500 text-white border-none shrink-0"
-                >
+                <Button onClick={copyWarungId} variant="secondary" size="sm" className="bg-slate-600 border-none shrink-0">
                   <i className={`fa-solid ${copiedId ? 'fa-check' : 'fa-copy'}`}></i>
                 </Button>
              </div>
-
              {isOldIdFormat && profile?.role === 'owner' && (
-               <button 
-                 onClick={handleGenerateNewWarungId}
-                 className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20"
-               >
-                 <i className="fa-solid fa-wand-magic-sparkles mr-2"></i>
-                 UBAH KE ID PROFESIONAL (W-XXXXXX)
+               <button onClick={handleGenerateNewWarungId} className="w-full py-2 bg-blue-600 text-white text-[10px] font-bold rounded-lg shadow-lg">
+                 UBAH KE ID PROFESIONAL
                </button>
              )}
            </Card>
 
            <Card className="p-6 space-y-4">
-            <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">
-              <i className="fa-solid fa-store mr-2 text-blue-500"></i> Profil Warung
-            </h2>
-            
-            <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-gray-50 rounded-2xl border border-gray-100">
-              <div className="relative group">
-                <div className="w-24 h-24 bg-white rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden shadow-sm">
-                  {settings.logoUrl ? (
-                    <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
-                  ) : (
-                    <i className="fa-solid fa-camera text-gray-300 text-3xl"></i>
-                  )}
+            <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">Profil Warung</h2>
+            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <div className="w-16 h-16 bg-white rounded-xl border flex items-center justify-center overflow-hidden">
+                  {settings.logoUrl ? <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain" /> : <i className="fa-solid fa-camera text-gray-300"></i>}
                 </div>
-              </div>
-              
-              <div className="flex-1 text-center sm:text-left">
-                <h3 className="font-bold text-gray-800 text-sm">Logo Warung</h3>
-                <input type="file" id="logo-input" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                <label htmlFor="logo-input" className="inline-block mt-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-[10px] font-bold text-gray-700 cursor-pointer shadow-sm hover:bg-gray-50">
-                  Ganti Logo
+                <label className="px-4 py-2 bg-white border rounded-lg text-xs font-bold cursor-pointer shadow-sm">
+                  Unggah Logo <input type="file" className="hidden" onChange={handleLogoUpload} />
                 </label>
-              </div>
             </div>
-
             <Input label="Nama Toko" value={settings.storeName} onChange={(e) => setSettings({...settings, storeName: e.target.value})} />
             <Input label="Alamat" value={settings.storeAddress} onChange={(e) => setSettings({...settings, storeAddress: e.target.value})} />
-            <Input label="Telepon" value={settings.storePhone} onChange={(e) => setSettings({...settings, storePhone: e.target.value})} />
+            <Input label="Telepon (WA)" value={settings.storePhone} onChange={(e) => setSettings({...settings, storePhone: e.target.value})} />
           </Card>
         </div>
 
         <div className="space-y-6">
           <Card className="p-6 space-y-4">
-            <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">
-              <i className="fa-solid fa-receipt mr-2 text-blue-500"></i> Format Struk
-            </h2>
+            <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">Pembayaran & Printer</h2>
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-3">
+               <div className="flex justify-between items-center">
+                  <h3 className="font-bold text-blue-900 text-xs uppercase tracking-wider">Metode QRIS</h3>
+                  <i className="fa-solid fa-qrcode text-blue-400"></i>
+               </div>
+               <Input placeholder="Contoh: 08123456789 atau ID Merchant" value={settings.storePhone} label="Nomor E-Wallet/ID Merchant" onChange={(e) => setSettings({...settings, storePhone: e.target.value})} />
+               <p className="text-[10px] text-blue-700 italic">Data ini akan digunakan untuk simulasi QRIS dinamis di kasir.</p>
+            </div>
+            
             <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
                <div className="flex justify-between items-center mb-4">
                   <h3 className="font-semibold text-indigo-900 text-sm">Printer Bluetooth</h3>
@@ -207,26 +173,16 @@ const Settings: React.FC = () => {
                   </span>
                </div>
                {printerStatus === 'connected' ? (
-                  <button onClick={handleDisconnectPrinter} className="w-full py-2 bg-white text-red-500 rounded-lg text-xs border font-bold hover:bg-red-50 transition-colors">Putus Koneksi</button>
+                  <button onClick={handleDisconnectPrinter} className="w-full py-2 bg-white text-red-500 rounded-lg text-xs border font-bold">Putus Koneksi</button>
                ) : (
                   <Button onClick={handleConnectPrinter} disabled={isConnectingPrinter} size="sm" className="w-full">Hubungkan Printer</Button>
                )}
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Pesan Footer Struk</label>
-              <textarea 
-                className="w-full mt-1 p-3 border border-gray-200 rounded-xl text-sm min-h-[100px] focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all"
-                placeholder="Pesan yang muncul di bagian bawah struk..."
-                value={settings.footerMessage}
-                onChange={(e) => setSettings({...settings, footerMessage: e.target.value})}
-              />
-            </div>
+            <Input label="Pesan Footer Struk" value={settings.footerMessage} onChange={(e) => setSettings({...settings, footerMessage: e.target.value})} />
           </Card>
 
           <Card className="p-6">
-             <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">
-                <i className="fa-solid fa-tags mr-2 text-blue-500"></i> Diskon Member (%)
-             </h2>
+             <h2 className="text-lg font-bold text-gray-800 border-b border-gray-100 pb-2 mb-4">Diskon Member (%)</h2>
              <div className="grid grid-cols-3 gap-3">
                 <Input label="Gold" type="number" value={settings.tierDiscounts.gold} onChange={e => setSettings({...settings, tierDiscounts: {...settings.tierDiscounts, gold: Number(e.target.value)}})} />
                 <Input label="Silver" type="number" value={settings.tierDiscounts.silver} onChange={e => setSettings({...settings, tierDiscounts: {...settings.tierDiscounts, silver: Number(e.target.value)}})} />
@@ -235,7 +191,6 @@ const Settings: React.FC = () => {
           </Card>
         </div>
       </div>
-
       <Toast isOpen={showAutoSaveToast} onClose={() => setShowAutoSaveToast(false)} type="success" message="Logo berhasil diupdate!" />
     </div>
   );
