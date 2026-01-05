@@ -35,10 +35,10 @@ export const Button: React.FC<ButtonProps> = ({ children, variant = "primary", s
 };
 
 // --- Input ---
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+// FIX: Use Omit to avoid conflict with standard 'prefix' property which expects a string
+interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "prefix"> {
   label?: string;
   error?: string;
-  // FIX: Change prefix type from string to React.ReactNode to allow JSX elements (like FontAwesome icons)
   prefix?: React.ReactNode;
 }
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ label, error, prefix, className = "", ...props }, ref) => (
