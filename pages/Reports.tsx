@@ -8,8 +8,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 
 type DateRange = "today" | "week" | "month" | "all";
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
-
 const Reports: React.FC = () => {
   const [range, setRange] = useState<DateRange>("week");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -22,6 +20,7 @@ const Reports: React.FC = () => {
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     setTransactions(db.getTransactions());
@@ -51,7 +50,6 @@ const Reports: React.FC = () => {
   const stats = useMemo(() => {
     const totalRevenue = filteredTx.reduce((sum, t) => sum + t.totalAmount, 0);
     const totalTransactions = filteredTx.length;
-    const avgTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
     let totalProfit = 0;
     filteredTx.forEach((t) => {
@@ -101,7 +99,6 @@ const Reports: React.FC = () => {
       totalRevenue,
       totalProfit,
       totalTransactions,
-      avgTransaction,
       topProducts,
       categoryData,
     };
@@ -114,28 +111,44 @@ const Reports: React.FC = () => {
     setShowAIModal(true);
     setAiLoading(true);
     setAiResponse("");
+    setAiError(null);
 
     try {
+      // 1. Check for API Key selection (Standard for AI Studio environments)
+      if (typeof window !== "undefined" && (window as any).aistudio) {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          await (window as any).aistudio.openSelectKey();
+          // After selecting, proceed. The key is injected to process.env.API_KEY automatically.
+        }
+      }
+
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Anda adalah konsultan bisnis ahli untuk sebuah 'Warung' (toko kelontong kecil) di Indonesia.
-Berdasarkan data performa warung berikut untuk periode (${range}):
+      const prompt = `Anda adalah 'Cak Warung', konsultan bisnis gaul dan ahli untuk warung kelontong di Indonesia.
+Berdasarkan data warung saya untuk periode (${range === "today" ? "Hari Ini" : range === "week" ? "Seminggu Terakhir" : "Bulan Ini"}):
 - Total Omzet: ${formatRp(stats.totalRevenue)}
 - Estimasi Keuntungan: ${formatRp(stats.totalProfit)}
 - Jumlah Transaksi: ${stats.totalTransactions}
 - Produk Terlaris: ${stats.topProducts.map((p) => `${p.name} (${p.qty} terjual)`).join(", ")}
-- Kategori Dominan: ${stats.categoryData.map((c) => c.name).join(", ")}
 
-Berikan 3-4 saran bisnis yang konkret, profesional, dan menyemangat dalam bahasa Indonesia. Fokus pada manajemen stok, strategi harga, dan cara meningkatkan kunjungan pelanggan. Gunakan format poin-poin yang mudah dibaca.`;
+Berikan 3 saran bisnis yang sangat konkret, singkat, dan pakai bahasa santai tapi profesional (ala pengusaha UMKM sukses). Fokus pada stok, harga, dan tips biar pelanggan balik lagi. Gunakan bullet points.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
       });
 
-      setAiResponse(response.text || "Maaf, AI tidak dapat memberikan saran saat ini.");
-    } catch (e) {
+      setAiResponse(response.text || "Waduh, saya lagi buntu ide nih. Coba tanya lagi nanti ya!");
+    } catch (e: any) {
       console.error(e);
-      setAiResponse("Gagal terhubung ke AI. Pastikan koneksi internet Anda stabil.");
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY")) {
+        setAiError("Kunci API tidak valid atau belum diset. Silakan pilih ulang kunci API Anda.");
+        if (typeof window !== "undefined" && (window as any).aistudio) {
+          await (window as any).aistudio.openSelectKey();
+        }
+      } else {
+        setAiError("Gagal terhubung ke otak AI. Cek koneksi internetmu atau coba lagi nanti, Bro.");
+      }
     } finally {
       setAiLoading(false);
     }
@@ -284,11 +297,16 @@ Berikan 3-4 saran bisnis yang konkret, profesional, dan menyemangat dalam bahasa
         </div>
 
         <div className="space-y-6">
-          <Card className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white border-none shadow-xl shadow-blue-200">
-            <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2 block">Punya Pertanyaan Bisnis?</span>
-            <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold mt-2 hover:bg-blue-50" icon="fa-wand-magic-sparkles">
-              Tanya AI Konsultan
-            </Button>
+          <Card className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white border-none shadow-xl shadow-blue-200 group overflow-hidden relative">
+            <div className="relative z-10">
+              <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest mb-2 block">Analisis Cerdas</span>
+              <h4 className="text-lg font-bold mb-3">Tanya Cak Warung</h4>
+              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Dapatkan saran jitu dari AI untuk tingkatkan omzet warungmu hari ini!</p>
+              <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold hover:bg-blue-50" icon="fa-wand-magic-sparkles">
+                Minta Saran Bisnis
+              </Button>
+            </div>
+            <i className="fa-solid fa-robot absolute -bottom-4 -right-4 text-8xl text-white/10 group-hover:scale-110 transition-transform"></i>
           </Card>
 
           <Card className="p-6 space-y-4">
@@ -307,29 +325,47 @@ Berikan 3-4 saran bisnis yang konkret, profesional, dan menyemangat dalam bahasa
       <Modal
         isOpen={showAIModal}
         onClose={() => setShowAIModal(false)}
-        title="AI Konsultan Bisnis"
+        title="Konsultan Cak Warung"
         footer={
           <Button variant="secondary" onClick={() => setShowAIModal(false)}>
-            Tutup
+            Mantap, Cak!
           </Button>
         }
       >
         <div className="space-y-4">
-          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-            <div className="flex items-center gap-3 mb-3 text-indigo-700">
-              <i className="fa-solid fa-robot text-xl animate-bounce"></i>
-              <span className="font-bold">Analisis Data Selesai</span>
+          <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-inner">
+            <div className="flex items-center gap-3 mb-4 text-indigo-700">
+              <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg">
+                <i className={`fa-solid ${aiLoading ? "fa-spinner fa-spin" : "fa-robot"}`}></i>
+              </div>
+              <div>
+                <span className="font-black block leading-none">Cak Warung AI</span>
+                <span className="text-[10px] uppercase font-bold text-indigo-400">Status: {aiLoading ? "Sedang Berpikir..." : "Saran Tersedia"}</span>
+              </div>
             </div>
+
             {aiLoading ? (
               <div className="flex flex-col items-center justify-center py-10 space-y-4">
-                <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-sm text-indigo-600 font-medium animate-pulse">Menghitung strategi terbaik untuk warung Anda...</p>
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                  <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                  <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
+                </div>
+                <p className="text-xs text-indigo-600 font-medium italic">Sabar ya, lagi ngitung strategi paling cuan...</p>
+              </div>
+            ) : aiError ? (
+              <div className="text-center py-6">
+                <i className="fa-solid fa-triangle-exclamation text-3xl text-amber-500 mb-2"></i>
+                <p className="text-sm text-slate-600 font-medium">{aiError}</p>
+                <Button size="sm" variant="outline" className="mt-4" onClick={handleAskAI}>
+                  Coba Lagi
+                </Button>
               </div>
             ) : (
-              <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{aiResponse}</div>
+              <div className="prose prose-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">{aiResponse}</div>
             )}
           </div>
-          <p className="text-[10px] text-slate-400 italic text-center">*AI memberikan saran berdasarkan data yang ada. Selalu gunakan pertimbangan pribadi dalam mengambil keputusan bisnis.</p>
+          <p className="text-[10px] text-slate-400 italic text-center px-4">*Saran dihasilkan otomatis oleh AI. Jangan lupa pakai insting dagang kamu juga ya, Bro!</p>
         </div>
       </Modal>
     </div>
