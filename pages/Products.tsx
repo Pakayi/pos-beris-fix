@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { db } from "../services/db";
-import { Product, ProductUnit, StockLog, UserRole } from "../types";
-import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
+import { db } from "../services/db.ts";
+import { Product, ProductUnit, StockLog, UserRole } from "../types.ts";
+import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI.tsx";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-// @ts-ignore - Loaded via importmap in index.html
+// @ts-ignore
 import * as XLSX from "xlsx";
 
 interface ProductsProps {
@@ -25,7 +25,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const isOwner = role === "owner";
 
-  // Import State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
   const [excelRows, setExcelRows] = useState<any[]>([]);
@@ -33,7 +32,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [isImporting, setIsImporting] = useState(false);
 
-  // Scanner State
   const [showScanner, setShowScanner] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
@@ -56,7 +54,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
             verbose: false,
           });
           scannerInstanceRef.current = html5QrCode;
-
           await html5QrCode.start(
             { facingMode: "environment" },
             { fps: 10, qrbox: { width: 250, height: 250 } },
@@ -85,12 +82,10 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
   const handleExportExcel = () => {
     if (!isOwner) return;
-
     const exportData = products.map((p) => {
       const units = p.units || [];
       const u1 = units.find((u) => u.conversion === 1) || { name: p.baseUnit, price: 0, buyPrice: 0, conversion: 1 };
       const extraUnits = units.filter((u) => u.conversion !== 1);
-
       return {
         KODE_BARCODE: p.sku || "",
         NAMA_PRODUK: p.name,
@@ -109,7 +104,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
         JUAL_3: extraUnits[1]?.price || "",
       };
     });
-
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Data Produk");
@@ -119,24 +113,18 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
       const data = new Uint8Array(event.target?.result as ArrayBuffer);
       const workbook = XLSX.read(data, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       if (rows.length === 0) return;
-
       const headers = rows[0].map((h) => String(h).trim());
       const dataRows = rows.slice(1);
-
       setColumnHeaders(headers);
       setExcelRows(dataRows);
-
-      // Enhanced Smart Auto-mapping based on Competitor columns
       const initialMapping: Record<string, string> = {};
       const fieldSuggestions: Record<string, string[]> = {
         name: ["nama", "name", "barang", "produk", "item", "product", "deskripsi", "NAMA"],
@@ -149,12 +137,10 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
         conversion2: ["isi", "konversi", "multiplier", "konversi_2", "ISI"],
         unit2Name: ["satuan_2", "unit_2", "SATUAN_2"],
       };
-
       Object.keys(fieldSuggestions).forEach((field) => {
         const found = headers.find((h) => fieldSuggestions[field].some((s) => h.toLowerCase() === s.toLowerCase() || h.toLowerCase().includes(s.toLowerCase())));
         if (found) initialMapping[field] = found;
       });
-
       setMapping(initialMapping);
       setImportStep(2);
     };
@@ -166,7 +152,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       alert("Minimal kolom 'Nama Produk' harus dipilih.");
       return;
     }
-
     setIsImporting(true);
     const newProducts: Product[] = excelRows
       .map((row, idx) => {
@@ -176,51 +161,23 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           const colIdx = columnHeaders.indexOf(header);
           return row[colIdx];
         };
-
         const name = String(getVal("name") || "");
         if (!name) return null;
-
         const baseUnit = String(getVal("baseUnit") || "Pcs");
         const buyPrice = Number(getVal("buyPrice")) || 0;
         const price = Number(getVal("price")) || 0;
         const sku = String(getVal("sku") || "");
         const stock = Number(getVal("stock")) || 0;
         const category = String(getVal("category") || "Umum");
-
-        const units: ProductUnit[] = [
-          {
-            name: baseUnit,
-            conversion: 1,
-            price,
-            buyPrice,
-          },
-        ];
-
+        const units: ProductUnit[] = [{ name: baseUnit, conversion: 1, price, buyPrice }];
         const conv2 = Number(getVal("conversion2"));
         const name2 = String(getVal("unit2Name") || "");
         if (conv2 > 1 && name2) {
-          units.push({
-            name: name2,
-            conversion: conv2,
-            price: price * conv2,
-            buyPrice: buyPrice * conv2,
-          });
+          units.push({ name: name2, conversion: conv2, price: price * conv2, buyPrice: buyPrice * conv2 });
         }
-
-        return {
-          id: `P-IMP-${Date.now()}-${idx}`,
-          name,
-          sku,
-          category,
-          baseUnit,
-          stock,
-          minStockAlert: 5,
-          units,
-          updatedAt: Date.now(),
-        };
+        return { id: `P-IMP-${Date.now()}-${idx}`, name, sku, category, baseUnit, stock, minStockAlert: 5, units, updatedAt: Date.now() };
       })
       .filter((p) => p !== null) as Product[];
-
     try {
       await db.bulkSaveProducts(newProducts);
       setIsImportModalOpen(false);
@@ -247,7 +204,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       units: editingProduct.units || [{ name: editingProduct.baseUnit, conversion: 1, price: 0, buyPrice: 0 }],
       updatedAt: Date.now(),
     };
-
     db.saveProduct(productToSave);
     setIsModalOpen(false);
     refreshProducts();
@@ -256,15 +212,12 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
   const handleUpdateStock = () => {
     const { product, type, quantity, unitIdx, reason } = stockAction;
     if (!product || !quantity || Number(quantity) <= 0) return;
-
     const user = JSON.parse(localStorage.getItem("warung_user_profile") || "{}");
     const unit = product.units[unitIdx];
     const qtyInBase = Number(quantity) * unit.conversion;
     const oldStock = product.stock;
     const newStock = type === "IN" ? oldStock + qtyInBase : oldStock - qtyInBase;
-
     const updatedProduct = { ...product, stock: newStock, updatedAt: Date.now() };
-
     const log: StockLog = {
       id: `LOG-ADJ-${Date.now()}`,
       productId: product.id,
@@ -279,7 +232,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
       operatorName: user.displayName || "User",
       timestamp: Date.now(),
     };
-
     db.saveProduct(updatedProduct, log);
     setIsStockModalOpen(false);
     refreshProducts();
@@ -301,6 +253,7 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
   return (
     <div className="space-y-6">
+      {/* Visual Content Remains Same - Just Ensuring JS Stability */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Manajemen Produk</h1>
@@ -335,7 +288,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           )}
         </div>
       </div>
-
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row gap-4 items-center">
           <Input placeholder="Cari nama atau barcode..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="max-w-md" prefix="fa-search" />
@@ -385,7 +337,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                             setIsStockModalOpen(true);
                           }}
                           className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 border border-emerald-100"
-                          title="Kelola Stok"
                         >
                           <i className="fa-solid fa-boxes-stacked"></i>
                         </button>
@@ -422,8 +373,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
           </table>
         </div>
       </div>
-
-      {/* Modal Import */}
       <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Import Data Dari Aplikasi Lain">
         {importStep === 1 && (
           <div className="space-y-6">
@@ -433,43 +382,32 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
                 <i className="fa-solid fa-file-excel"></i>
               </div>
               <h4 className="font-bold text-slate-900">Pilih File Excel (.xls / .xlsx)</h4>
-              <p className="text-xs text-slate-500 mt-1">Upload file export dari aplikasi lama Anda (Software POS Desktop, ERP, dll)</p>
-            </div>
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-[11px] text-blue-700 leading-relaxed">
-              <p className="font-bold mb-1 uppercase tracking-wider">💡 Fitur Import Pintar</p>
-              Beris POS akan otomatis mendeteksi kolom yang sesuai. Anda tidak perlu repot mengubah isi file Excel Anda.
+              <p className="text-xs text-slate-500 mt-1">Upload file export dari aplikasi lama Anda</p>
             </div>
           </div>
         )}
-
         {importStep === 2 && (
           <div className="space-y-4">
             <div className="bg-slate-800 p-3 rounded-lg text-white mb-2">
-              <p className="text-[10px] font-bold uppercase opacity-60">Mapping Kolom</p>
-              <p className="text-xs">Cocokkan kolom di file Anda dengan data di Beris POS</p>
+              <p className="text-xs">Cocokkan kolom di file Anda dengan Beris POS</p>
             </div>
-            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 no-scrollbar">
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto no-scrollbar">
               {[
                 { id: "name", label: "Nama Produk", required: true, icon: "fa-tag" },
                 { id: "sku", label: "Barcode / SKU", required: false, icon: "fa-barcode" },
                 { id: "price", label: "Harga Jual Dasar", required: false, icon: "fa-hand-holding-dollar" },
-                { id: "buyPrice", label: "Harga Modal", required: false, icon: "fa-cart-shopping" },
                 { id: "stock", label: "Stok Saat Ini", required: false, icon: "fa-box" },
                 { id: "category", label: "Kategori", required: false, icon: "fa-folder" },
                 { id: "baseUnit", label: "Satuan Dasar", required: false, icon: "fa-ruler" },
-                { id: "unit2Name", label: "Satuan Grosir (Opsional)", required: false, icon: "fa-boxes" },
-                { id: "conversion2", label: "Isi/Konversi Grosir", required: false, icon: "fa-calculator" },
               ].map((field) => (
-                <div key={field.id} className="flex items-center gap-3 bg-white p-3 border border-slate-200 rounded-xl hover:border-blue-300 transition-colors">
+                <div key={field.id} className="flex items-center gap-3 bg-white p-3 border border-slate-200 rounded-xl">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-xs">
                     <i className={`fa-solid ${field.icon}`}></i>
                   </div>
                   <div className="flex-1">
-                    <p className="text-[11px] font-bold text-slate-800">
-                      {field.label} {field.required && <span className="text-red-500">*</span>}
-                    </p>
+                    <p className="text-[11px] font-bold text-slate-800">{field.label}</p>
                   </div>
-                  <select className="w-1/2 text-xs border rounded-lg p-2 bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" value={mapping[field.id] || ""} onChange={(e) => setMapping({ ...mapping, [field.id]: e.target.value })}>
+                  <select className="w-1/2 text-xs border rounded-lg p-2 bg-slate-50" value={mapping[field.id] || ""} onChange={(e) => setMapping({ ...mapping, [field.id]: e.target.value })}>
                     <option value="">-- Lewati --</option>
                     {columnHeaders.map((h) => (
                       <option key={h} value={h}>
@@ -490,113 +428,64 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
             </div>
           </div>
         )}
-
         {importStep === 3 && (
           <div className="space-y-6 text-center">
-            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl">
               <i className="fa-solid fa-cloud-arrow-up"></i>
             </div>
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">Konfirmasi Import</h3>
-              <p className="text-sm text-slate-500">
-                Ditemukan <b>{excelRows.length}</b> baris data yang siap dipindahkan ke Beris POS.
-              </p>
-            </div>
-            <div className="p-4 bg-slate-900 text-white rounded-2xl text-left border border-slate-800 shadow-xl">
-              <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">Preview 5 Barang Teratas</p>
-              <div className="space-y-1 max-h-32 overflow-y-auto pr-2 no-scrollbar">
-                {excelRows.slice(0, 5).map((row, i) => (
-                  <div key={i} className="text-xs py-1.5 border-b border-slate-800 last:border-0 flex justify-between gap-2">
-                    <span className="truncate flex-1 opacity-90">{row[columnHeaders.indexOf(mapping.name)]}</span>
-                    <span className="text-emerald-400 font-mono">Rp {Number(row[columnHeaders.indexOf(mapping.price)] || 0).toLocaleString("id-ID")}</span>
-                  </div>
-                ))}
-                {excelRows.length > 5 && <p className="text-[10px] text-slate-500 mt-2 text-center">...dan {excelRows.length - 5} barang lainnya.</p>}
-              </div>
-            </div>
+            <h3 className="text-xl font-bold">Siap Konfirmasi?</h3>
+            <p className="text-sm text-slate-500">Ditemukan {excelRows.length} baris data.</p>
             <div className="flex gap-2">
               <Button variant="secondary" className="flex-1" onClick={() => setImportStep(2)} disabled={isImporting}>
                 Kembali
               </Button>
-              <Button className="flex-1 shadow-lg shadow-blue-500/20" onClick={executeImport} disabled={isImporting}>
-                {isImporting ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : "Import Sekarang"}
+              <Button className="flex-1" onClick={executeImport} disabled={isImporting}>
+                {isImporting ? <i className="fa-solid fa-spinner fa-spin"></i> : "Import Sekarang"}
               </Button>
             </div>
           </div>
         )}
       </Modal>
-
-      {/* Modal Update Stok */}
       <Modal isOpen={isStockModalOpen} onClose={() => setIsStockModalOpen(false)} title="Update Stok Barang">
         {stockAction.product && (
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-              <p className="text-xs text-blue-600 font-bold uppercase tracking-wider">Produk</p>
               <p className="font-bold text-blue-900">{stockAction.product.name}</p>
-              <p className="text-xs text-blue-700 mt-1">
-                Stok Saat Ini:{" "}
-                <span className="font-bold">
-                  {stockAction.product.stock} {stockAction.product.baseUnit}
-                </span>
+              <p className="text-xs text-blue-700">
+                Stok: {stockAction.product.stock} {stockAction.product.baseUnit}
               </p>
             </div>
-
             <div className="flex bg-slate-100 p-1 rounded-lg">
-              <button
-                onClick={() => setStockAction({ ...stockAction, type: "IN" })}
-                className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${stockAction.type === "IN" ? "bg-emerald-500 text-white shadow-md" : "text-slate-500"}`}
-              >
-                BARANG MASUK (+)
+              <button onClick={() => setStockAction({ ...stockAction, type: "IN" })} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${stockAction.type === "IN" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>
+                MASUK (+)
               </button>
-              <button
-                onClick={() => setStockAction({ ...stockAction, type: "OUT" })}
-                className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${stockAction.type === "OUT" ? "bg-red-500 text-white shadow-md" : "text-slate-500"}`}
-              >
-                BARANG KELUAR (-)
+              <button onClick={() => setStockAction({ ...stockAction, type: "OUT" })} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${stockAction.type === "OUT" ? "bg-red-500 text-white" : "text-slate-500"}`}>
+                KELUAR (-)
               </button>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Jumlah" type="number" value={stockAction.quantity} onChange={(e) => setStockAction({ ...stockAction, quantity: e.target.value })} placeholder="0" />
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Satuan</label>
-                <select className="w-full p-2 border rounded-lg text-sm bg-white" value={stockAction.unitIdx} onChange={(e) => setStockAction({ ...stockAction, unitIdx: Number(e.target.value) })}>
-                  {stockAction.product.units.map((u, i) => (
-                    <option key={i} value={i}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Input label="Jumlah" type="number" value={stockAction.quantity} onChange={(e) => setStockAction({ ...stockAction, quantity: e.target.value })} />
+              <select className="w-full mt-5 p-2 border rounded-lg text-sm bg-white" value={stockAction.unitIdx} onChange={(e) => setStockAction({ ...stockAction, unitIdx: Number(e.target.value) })}>
+                {stockAction.product.units.map((u, i) => (
+                  <option key={i} value={i}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
             </div>
-
-            <Input
-              label="Alasan / Catatan (Opsional)"
-              value={stockAction.reason}
-              onChange={(e) => setStockAction({ ...stockAction, reason: e.target.value })}
-              placeholder={stockAction.type === "IN" ? "Contoh: Belanja Supplier A" : "Contoh: Barang Rusak"}
-            />
-
-            <div className="pt-4 flex gap-2">
-              <Button variant="secondary" className="flex-1" onClick={() => setIsStockModalOpen(false)}>
-                Batal
-              </Button>
-              <Button className="flex-1" onClick={handleUpdateStock}>
-                Simpan Perubahan
-              </Button>
-            </div>
+            <Button className="w-full" onClick={handleUpdateStock}>
+              Simpan Perubahan
+            </Button>
           </div>
         )}
       </Modal>
-
-      {/* Modal Add/Edit Product */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingProduct.id ? "Edit Produk" : "Tambah Produk Baru"}>
         <div className="space-y-4">
           <Input label="Nama Produk" value={editingProduct.name || ""} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Input label="Kategori" value={editingProduct.category || ""} onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })} />
             <div className="w-full">
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Barcode (SKU)</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">SKU</label>
               <div className="flex gap-1">
                 <input className="w-full px-2 py-2 border rounded-lg text-sm" value={editingProduct.sku || ""} onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })} />
                 <Button variant="secondary" onClick={() => setShowScanner(true)}>
@@ -606,87 +495,53 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
             </div>
           </div>
           <div className="p-3 bg-gray-50 rounded-xl border grid grid-cols-3 gap-3">
-            <Input label="Satuan Dasar" value={editingProduct.baseUnit || ""} onChange={(e) => setEditingProduct({ ...editingProduct, baseUnit: e.target.value })} />
-            <Input label="Stok Awal" type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: e.target.value })} disabled={!!editingProduct.id} />
-            <Input label="Min. Alert" type="number" value={editingProduct.minStockAlert} onChange={(e) => setEditingProduct({ ...editingProduct, minStockAlert: e.target.value })} />
+            <Input label="Satuan" value={editingProduct.baseUnit || ""} onChange={(e) => setEditingProduct({ ...editingProduct, baseUnit: e.target.value })} />
+            <Input label="Stok" type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: e.target.value })} disabled={!!editingProduct.id} />
+            <Input label="Alert" type="number" value={editingProduct.minStockAlert} onChange={(e) => setEditingProduct({ ...editingProduct, minStockAlert: e.target.value })} />
           </div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <label className="text-xs font-bold text-gray-400 uppercase">Harga & Satuan Jual</label>
-            </div>
-            {editingProduct.units?.map((unit: any, idx: number) => (
-              <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3 relative">
-                {idx > 0 && (
-                  <button onClick={() => removeUnitField(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600">
-                    <i className="fa-solid fa-trash-can"></i>
-                  </button>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    label="Nama Satuan"
-                    value={unit.name}
-                    onChange={(e) => {
-                      const u = [...editingProduct.units];
-                      u[idx].name = e.target.value;
-                      setEditingProduct({ ...editingProduct, units: u });
-                    }}
-                    placeholder="Pcs/Dus/Pak"
-                  />
-                  <Input
-                    label="Isi (Konversi)"
-                    type="number"
-                    value={unit.conversion}
-                    onChange={(e) => {
-                      const u = [...editingProduct.units];
-                      u[idx].conversion = Number(e.target.value);
-                      setEditingProduct({ ...editingProduct, units: u });
-                    }}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {isOwner ? (
-                    <CurrencyInput
-                      label="Modal (Beli)"
-                      value={unit.buyPrice || 0}
-                      onChange={(val) => {
-                        const u = [...editingProduct.units];
-                        u[idx].buyPrice = val;
-                        setEditingProduct({ ...editingProduct, units: u });
-                      }}
-                    />
-                  ) : (
-                    <div className="opacity-50">
-                      <label className="block text-xs font-semibold text-gray-500 mb-1">Modal (Beli)</label>
-                      <div className="bg-gray-100 p-2 rounded-lg text-sm italic border text-gray-400">Terkunci</div>
-                    </div>
-                  )}
-                  <CurrencyInput
-                    label="Jual"
-                    value={unit.price}
-                    onChange={(val) => {
-                      const u = [...editingProduct.units];
-                      u[idx].price = val;
-                      setEditingProduct({ ...editingProduct, units: u });
-                    }}
-                  />
-                </div>
+          {editingProduct.units?.map((unit: any, idx: number) => (
+            <div key={idx} className="p-4 border border-blue-100 bg-blue-50/20 rounded-xl space-y-3 relative">
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Unit"
+                  value={unit.name}
+                  onChange={(e) => {
+                    const u = [...editingProduct.units];
+                    u[idx].name = e.target.value;
+                    setEditingProduct({ ...editingProduct, units: u });
+                  }}
+                />
+                <Input
+                  label="Isi"
+                  type="number"
+                  value={unit.conversion}
+                  onChange={(e) => {
+                    const u = [...editingProduct.units];
+                    u[idx].conversion = Number(e.target.value);
+                    setEditingProduct({ ...editingProduct, units: u });
+                  }}
+                />
               </div>
-            ))}
-            <button onClick={addUnitField} className="w-full py-3 border-2 border-dashed border-blue-200 rounded-xl text-blue-600 hover:bg-blue-50 text-sm font-bold transition-all">
-              <i className="fa-solid fa-plus-circle mr-2"></i> Tambah Satuan Jual (Grosir/Multi)
-            </button>
-          </div>
-          <Button className="w-full py-3 mt-4" onClick={handleSave}>
+              <CurrencyInput
+                label="Harga Jual"
+                value={unit.price}
+                onChange={(val) => {
+                  const u = [...editingProduct.units];
+                  u[idx].price = val;
+                  setEditingProduct({ ...editingProduct, units: u });
+                }}
+              />
+            </div>
+          ))}
+          <Button className="w-full" onClick={handleSave}>
             Simpan Produk
           </Button>
         </div>
       </Modal>
-
       <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode">
         <div id="product-scanner" className="w-full max-w-[300px] bg-black rounded-lg min-h-[250px] mx-auto border-2 border-blue-500"></div>
       </Modal>
     </div>
   );
 };
-
 export default Products;

@@ -1,21 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { HashRouter, Routes, Route, NavLink, useLocation, Navigate } from "react-router-dom";
-import Dashboard from "./pages/Dashboard";
-import POS from "./pages/POS";
-import Products from "./pages/Products";
-import Customers from "./pages/Customers";
-import Settings from "./pages/Settings";
-import Reports from "./pages/Reports";
-import Inventory from "./pages/Inventory";
-import Login from "./pages/Login";
-import { PinGuard } from "./components/Security";
-import { db } from "./services/db";
-import { auth, db_fs } from "./services/firebase";
-// Fix: Correct modular imports for Auth functions and types
+import Dashboard from "./pages/Dashboard.tsx";
+import POS from "./pages/POS.tsx";
+import Products from "./pages/Products.tsx";
+import Customers from "./pages/Customers.tsx";
+import Settings from "./pages/Settings.tsx";
+import Reports from "./pages/Reports.tsx";
+import Inventory from "./pages/Inventory.tsx";
+import Login from "./pages/Login.tsx";
+import { PinGuard } from "./components/Security.tsx";
+import { db } from "./services/db.ts";
+import { auth, db_fs } from "./services/firebase.ts";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { OfflineIndicator, Button, Card } from "./components/UI";
-import { UserProfile, Warung } from "./types";
+import { OfflineIndicator, Button, Card } from "./components/UI.tsx";
+import { UserProfile, Warung } from "./types.ts";
 
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "cashier"] },
@@ -44,28 +43,18 @@ const App: React.FC = () => {
             signOut(auth);
             return;
           }
-
-          // Cek status warung & trial
           const warungRef = doc(db_fs, "warungs", fetchedProfile.warungId);
           const warungSnap = await getDoc(warungRef);
-
           if (warungSnap.exists()) {
             let wData = warungSnap.data() as Warung;
-
-            // --- AUTO MIGRATION LOGIC ---
             if (wData.plan === "free" && !wData.trialEndsAt) {
               const thirtyDays = 30 * 24 * 60 * 60 * 1000;
               const newTrialDate = (wData.createdAt || Date.now()) + thirtyDays;
-
               await updateDoc(warungRef, { trialEndsAt: newTrialDate });
               wData.trialEndsAt = newTrialDate;
-              console.log("Database Updated: Trial date assigned to legacy account.");
             }
-            // ----------------------------
-
             setWarung(wData);
           }
-
           db.setWarungId(fetchedProfile.warungId);
           setProfile(fetchedProfile);
         }
@@ -110,10 +99,6 @@ const App: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Masa Percobaan Habis!</h1>
             <p className="text-slate-500 mt-2">Akun warung Anda telah ditangguhkan karena masa percobaan 30 hari telah berakhir.</p>
-          </div>
-          <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-            <p className="text-xs text-blue-600 font-bold uppercase mb-1">Cara Aktivasi</p>
-            <p className="text-sm text-blue-900">Hubungi Admin Beris POS untuk melakukan pembayaran dan mengaktifkan akun Anda secara permanen.</p>
           </div>
           <Button className="w-full py-4 font-bold text-lg" onClick={() => window.open("https://wa.me/628123456789", "_blank")}>
             <i className="fa-brands fa-whatsapp mr-2"></i> Hubungi Admin
