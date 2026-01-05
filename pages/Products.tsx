@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { db } from "../services/db.ts";
-import { Product, ProductUnit, StockLog, UserRole } from "../types.ts";
-import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI.tsx";
+import { db } from "../services/db";
+import { Product, ProductUnit, StockLog, UserRole } from "../types";
+import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 // @ts-ignore
 import * as XLSX from "xlsx";
@@ -253,7 +253,6 @@ const Products: React.FC<ProductsProps> = ({ role }) => {
 
   return (
     <div className="space-y-6">
-      {/* Visual Content Remains Same - Just Ensuring JS Stability */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Manajemen Produk</h1>

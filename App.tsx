@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { HashRouter, Routes, Route, NavLink, useLocation, Navigate } from "react-router-dom";
-import Dashboard from "./pages/Dashboard.tsx";
-import POS from "./pages/POS.tsx";
-import Products from "./pages/Products.tsx";
-import Customers from "./pages/Customers.tsx";
-import Settings from "./pages/Settings.tsx";
-import Reports from "./pages/Reports.tsx";
-import Inventory from "./pages/Inventory.tsx";
-import Login from "./pages/Login.tsx";
-import { PinGuard } from "./components/Security.tsx";
-import { db } from "./services/db.ts";
-import { auth, db_fs } from "./services/firebase.ts";
+import Dashboard from "./pages/Dashboard";
+import POS from "./pages/POS";
+import Products from "./pages/Products";
+import Customers from "./pages/Customers";
+import Settings from "./pages/Settings";
+import Reports from "./pages/Reports";
+import Inventory from "./pages/Inventory";
+import Login from "./pages/Login";
+import { PinGuard } from "./components/Security";
+import { db } from "./services/db";
+import { auth, db_fs } from "./services/firebase";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { OfflineIndicator, Button, Card } from "./components/UI.tsx";
-import { UserProfile, Warung } from "./types.ts";
+import { OfflineIndicator, Button, Card } from "./components/UI";
+import { UserProfile, Warung } from "./types";
 
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "cashier"] },
