@@ -86,9 +86,15 @@ const Reports: React.FC = () => {
   const openKeySelector = async () => {
     const aistudio = (window as any).aistudio;
     if (aistudio) {
-      await aistudio.openSelectKey();
-      // Lanjutkan panggil AI setelah selector dibuka (mengikuti aturan race condition)
-      handleAskAI();
+      try {
+        await aistudio.openSelectKey();
+        handleAskAI();
+      } catch (e) {
+        setAiError("Gagal membuka pemilih kunci otomatis.");
+      }
+    } else {
+      // Kasus jika di Vercel (luar AI Studio)
+      setAiError("Bro, karena kamu buka di Vercel, kamu harus masukin API Key-nya di 'Environment Variables' dashboard Vercel dengan nama API_KEY. Baru habis itu di-redeploy.");
     }
   };
 
@@ -100,28 +106,35 @@ const Reports: React.FC = () => {
     setAiError(null);
 
     try {
-      // 1. Cek kunci API via AI Studio selector
-      const aistudio = (window as any).aistudio;
-      if (aistudio) {
-        const hasKey = await aistudio.hasSelectedApiKey();
-        if (!hasKey) {
-          await aistudio.openSelectKey();
-          // Lanjut proses (asumsi pemilihan sukses sesuai aturan)
+      // Ambil key dari environment
+      const apiKey = process.env.API_KEY;
+
+      if (!apiKey || apiKey === "undefined") {
+        // Cek apakah ada aistudio helper
+        const aistudio = (window as any).aistudio;
+        if (aistudio) {
+          const hasKey = await aistudio.hasSelectedApiKey();
+          if (!hasKey) {
+            await aistudio.openSelectKey();
+            // Lanjut (asumsi user pilih key)
+          }
+        } else {
+          throw new Error("API_KEY_MISSING");
         }
       }
 
-      // 2. Inisialisasi GoogleGenAI sesaat sebelum memanggil (agar pakai key terbaru)
+      // Inisialisasi GoogleGenAI (Wajib pakai process.env.API_KEY)
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-      const prompt = `Anda adalah 'Cak Warung', konsultan bisnis warung kelontong legendaris yang bicaranya santai tapi sangat cerdas.
+      const prompt = `Anda adalah 'Cak Warung', konsultan bisnis warung kelontong cerdas.
 Data Warung (${range}):
 - Omzet: ${formatRp(stats.totalRevenue)}
 - Untung: ${formatRp(stats.totalProfit)}
 - Transaksi: ${stats.totalTransactions}
 - Top Produk: ${stats.topProducts.map((p) => p.name).join(", ")}
 
-Berikan 3 saran strategis yang 'out-of-the-box' untuk meningkatkan keuntungan hari ini. 
-Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses dan gaul. Pakai bahasa Indonesia santai. Gunakan bullet points.`;
+Berikan 3 saran strategis 'out-of-the-box' untuk meningkatkan keuntungan. 
+Bahasa Indonesia santai ala pemilik warung sukses.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -131,22 +144,17 @@ Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses dan gaul. Pakai ba
         },
       });
 
-      if (!response.text) throw new Error("Kosong");
+      if (!response.text) throw new Error("EMPTY_RESPONSE");
       setAiResponse(response.text);
     } catch (e: any) {
-      console.error("AI Error Details:", e);
+      console.error("AI Error:", e);
 
-      // Jika error karena kunci tidak ditemukan atau "Requested entity was not found"
-      if (e.message?.includes("Requested entity was not found") || e.message?.toLowerCase().includes("not found") || e.message?.toLowerCase().includes("api key")) {
-        setAiError("Kunci API tidak valid atau belum disetel. Klik 'Daftarkan API Key' untuk memasukkan kunci Gemini kamu.");
-
-        // Sesuai aturan: jika "Requested entity was not found", reset dan minta pilih key lagi
-        const aistudio = (window as any).aistudio;
-        if (aistudio && e.message?.includes("Requested entity was not found")) {
-          await aistudio.openSelectKey();
-        }
+      if (e.message === "API_KEY_MISSING") {
+        setAiError("Kunci API (API_KEY) tidak ditemukan di sistem Vercel kamu, Bro.");
+      } else if (e.message?.includes("Requested entity was not found")) {
+        setAiError("Kunci API yang kamu pakai tidak punya akses ke model Gemini 3. Pastikan API Key-mu dari Google Cloud Project yang sudah aktif billing-nya.");
       } else {
-        setAiError("Gagal terhubung ke Cak Warung AI. Pastikan internet lancar atau coba lagi nanti ya, Bro.");
+        setAiError("Waduh, koneksi ke otak AI lagi macet. Coba klik 'Coba Lagi' atau cek kuncimu di Vercel.");
       }
     } finally {
       setAiLoading(false);
@@ -245,7 +253,7 @@ Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses dan gaul. Pakai ba
                 <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block">AI Konsultan Aktif</span>
               </div>
               <h4 className="text-lg font-bold mb-3">Tanya Cak Warung</h4>
-              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Dapatkan saran strategis agar jualanmu hari ini makin laku keras!</p>
+              <p className="text-xs text-blue-100 mb-4 leading-relaxed opacity-90">Biar AI yang mikirin strategi jualanmu biar makin cuan!</p>
               <Button onClick={handleAskAI} variant="secondary" className="w-full bg-white text-blue-700 border-none shadow-sm font-bold hover:bg-blue-50 py-3" icon="fa-wand-magic-sparkles">
                 Minta Saran Bisnis
               </Button>
@@ -271,7 +279,7 @@ Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses dan gaul. Pakai ba
         title="Konsultan Cak Warung"
         footer={
           <Button variant="secondary" className="w-full" onClick={() => setShowAIModal(false)}>
-            Mantap, Cak!
+            Siap, Cak!
           </Button>
         }
       >
@@ -294,15 +302,15 @@ Bicaralah dengan gaya bahasa pemilik warung yang sudah sukses dan gaul. Pakai ba
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                   <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
                 </div>
-                <p className="text-[10px] text-indigo-600 font-bold italic">Bentar, lagi mikir keras...</p>
+                <p className="text-[10px] text-indigo-600 font-bold italic">Lagi mikir keras nih, sabar ya Bro...</p>
               </div>
             ) : aiError ? (
               <div className="text-center py-4 bg-white/50 rounded-xl border border-amber-100">
                 <i className="fa-solid fa-triangle-exclamation text-3xl text-amber-500 mb-3"></i>
-                <p className="text-xs text-slate-700 px-6 leading-relaxed mb-4">{aiError}</p>
+                <p className="text-xs text-slate-700 px-6 leading-relaxed mb-4 font-bold">{aiError}</p>
                 <div className="flex flex-col gap-2 px-6">
                   <Button size="sm" variant="primary" onClick={openKeySelector}>
-                    Daftarkan API Key Baru
+                    Coba Daftarkan Ulang
                   </Button>
                   <Button size="sm" variant="ghost" onClick={handleAskAI}>
                     Coba Lagi
