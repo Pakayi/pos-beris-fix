@@ -167,8 +167,12 @@ const Login: React.FC = () => {
                 </div>
               </div>
 
-              <button type="button" onClick={handleGoogleLogin} className="w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-slate-700 text-sm font-medium">
-                <img src="https://www.gstatic.com/favicon.ico" alt="G" className="w-4 h-4" />
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                className="w-full flex items-center justify-center gap-3 py-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-slate-700 text-sm font-medium active:scale-[0.98]"
+              >
+                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" alt="Google Logo" className="w-5 h-5 object-contain" />
                 Masuk dengan Google
               </button>
             </>
