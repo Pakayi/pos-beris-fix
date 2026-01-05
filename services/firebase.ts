@@ -1,11 +1,10 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-// Fix: Correct modular import for getAuth
 import { getAuth } from "firebase/auth";
 import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
-// Kunci ini KHUSUS untuk Firebase, jangan dicampur dengan process.env.API_KEY (Gemini)
+// Konfigurasi Firebase Dasar
 const firebaseConfig = {
-  apiKey: "AIzaSyAR5fQXEhFVdCwXjCVSzZzMDWwqqpvdCwE", // Gunakan kunci Firebase asli Bapak
+  apiKey: "AIzaSyAR5fQXEhFVdCwXjCVSzZzMDWwqqpvdCwE",
   authDomain: "warung-pos.firebaseapp.com",
   projectId: "warung-pos",
   storageBucket: "warung-pos.firebasestorage.app",
