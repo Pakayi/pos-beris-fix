@@ -1,25 +1,31 @@
-import React, { useState } from "react";
-import { auth, db_fs } from "../services/firebase";
-import { db } from "../services/db";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, updateProfile } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { Button, Input, Card } from "../components/UI";
-import { UserProfile, UserRole } from "../types";
+
+import React, { useState } from 'react';
+import { auth, db_fs } from '../services/firebase';
+import { db } from '../services/db';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider,
+  updateProfile 
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { Button, Input, Card } from '../components/UI';
+import { UserProfile, UserRole } from '../types';
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [warungIdInput, setWarungIdInput] = useState("");
-  const [role, setRole] = useState<UserRole>("owner");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [warungIdInput, setWarungIdInput] = useState('');
+  const [role, setRole] = useState<UserRole>('owner');
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
-  // Fungsi untuk generate ID Warung yang unik dan rapi
   const generateUniqueWarungId = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Tanpa huruf/angka membingungkan (O, 0, I, 1)
-    let result = "W-";
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = 'W-';
     for (let i = 0; i < 6; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
@@ -29,59 +35,74 @@ const Login: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError("");
-
+    setError('');
+    
     try {
       if (isRegistering) {
-        // Validasi Warung ID jika mendaftar sebagai Staff
-        if (role === "staff") {
-          if (!warungIdInput.trim()) {
-            setError("Silakan masukkan Warung ID dari Pemilik.");
-            setLoading(false);
-            return;
-          }
-          const warungDoc = await getDoc(doc(db_fs, "warungs", warungIdInput.trim()));
-          if (!warungDoc.exists()) {
-            setError("Warung ID tidak ditemukan. Periksa kembali kodenya.");
-            setLoading(false);
-            return;
-          }
+        // 1. Buat akun Auth terlebih dahulu agar mendapatkan UID dan akses 'authenticated'
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        
+        await updateProfile(user, { displayName });
+        
+        let targetWarungId = '';
+
+        if (role === 'staff') {
+            const inputId = warungIdInput.trim().toUpperCase();
+            if (!inputId) {
+                throw new Error("WARUNG_ID_REQUIRED");
+            }
+            
+            // 2. Sekarang kita sudah login, kita bisa cek keberadaan Warung ID
+            const warungDoc = await getDoc(doc(db_fs, 'warungs', inputId));
+            if (!warungDoc.exists()) {
+                // Jika ID salah, kita hapus user yang baru dibuat agar tidak nyangkut (opsional)
+                // Tapi untuk UX lebih baik beri pesan error saja
+                throw new Error("WARUNG_ID_INVALID");
+            }
+            targetWarungId = inputId;
+        } else {
+            targetWarungId = generateUniqueWarungId();
         }
 
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName });
-
-        // Inisialisasi Profil
-        // Jika owner, generate ID warung baru. Jika staff, pakai input dari owner.
-        const newWarungId = role === "owner" ? generateUniqueWarungId() : warungIdInput.trim();
-
+        // 3. Simpan Profil
         const profile: UserProfile = {
-          uid: userCredential.user.uid,
-          email: email,
-          displayName: displayName,
-          role: role,
-          warungId: newWarungId,
+            uid: user.uid,
+            email: email,
+            displayName: displayName,
+            role: role,
+            warungId: targetWarungId
         };
+        
         await db.saveUserProfile(profile);
       } else {
         await signInWithEmailAndPassword(auth, email, password);
-        // Profil akan di-load otomatis oleh setupCloudSync di db.ts
       }
     } catch (err: any) {
-      console.error("Auth Error:", err.code, err.message);
-      switch (err.code) {
-        case "auth/invalid-credential":
-          setError("Email atau password salah. Pastikan Anda sudah terdaftar.");
-          break;
-        case "auth/email-already-in-use":
-          setError("Email sudah terdaftar. Silakan masuk saja.");
-          break;
-        case "auth/weak-password":
-          setError("Password terlalu lemah (min. 6 karakter).");
-          break;
-        default:
-          setError("Terjadi kesalahan. Silakan coba lagi nanti.");
+      console.error("Auth Error Detail:", err);
+      
+      if (err.message === "WARUNG_ID_REQUIRED") {
+          setError("Silakan masukkan Warung ID dari Pemilik.");
+      } else if (err.message === "WARUNG_ID_INVALID") {
+          setError("Warung ID tidak ditemukan. Periksa kembali kodenya.");
+      } else {
+          switch (err.code) {
+            case 'auth/invalid-credential':
+              setError('Email atau password salah.');
+              break;
+            case 'auth/email-already-in-use':
+              setError('Email sudah terdaftar. Silakan login.');
+              break;
+            case 'auth/weak-password':
+              setError('Password terlalu lemah (min. 6 karakter).');
+              break;
+            default:
+              setError('Gagal mendaftar. Pastikan koneksi stabil dan data benar.');
+          }
       }
+      
+      // Jika error terjadi setelah user sempat dibuat, kita biarkan saja user login 
+      // tapi dia akan nyangkut tanpa profil jika tidak kita handle di db.ts
     } finally {
       setLoading(false);
     }
@@ -89,33 +110,28 @@ const Login: React.FC = () => {
 
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
-    setError("");
+    setError('');
     try {
       const result = await signInWithPopup(auth, provider);
-
-      // Cek apakah user sudah punya profil di Firestore
-      const userDoc = await getDoc(doc(db_fs, "users", result.user.uid));
-
+      const userDoc = await getDoc(doc(db_fs, 'users', result.user.uid));
+      
       if (!userDoc.exists()) {
-        // Jika belum ada profil, buat profil baru sebagai Owner dengan ID Warung baru (Format W-XXXXXX)
-        const profile: UserProfile = {
-          uid: result.user.uid,
-          email: result.user.email || "",
-          displayName: result.user.displayName || "User",
-          role: "owner",
-          warungId: generateUniqueWarungId(),
-        };
-        await db.saveUserProfile(profile);
+          const profile: UserProfile = {
+              uid: result.user.uid,
+              email: result.user.email || '',
+              displayName: result.user.displayName || 'User',
+              role: 'owner',
+              warungId: generateUniqueWarungId()
+          };
+          await db.saveUserProfile(profile);
       } else {
-        // Jika sudah ada, sinkronkan ke local storage
-        const profileData = userDoc.data() as UserProfile;
-        localStorage.setItem("warung_user_profile", JSON.stringify(profileData));
-        window.dispatchEvent(new Event("profile-updated"));
+          const profileData = userDoc.data() as UserProfile;
+          localStorage.setItem('warung_user_profile', JSON.stringify(profileData));
+          window.dispatchEvent(new Event('profile-updated'));
       }
     } catch (err: any) {
-      console.error("Google Auth Error:", err);
-      if (err.code !== "auth/popup-closed-by-user") {
-        setError("Gagal login dengan Google.");
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setError('Gagal login dengan Google.');
       }
     }
   };
@@ -131,7 +147,9 @@ const Login: React.FC = () => {
             <i className="fa-solid fa-cash-register text-2xl text-white"></i>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Warung POS Pro</h1>
-          <p className="text-slate-500 mt-1 text-sm">{isRegistering ? "Buat akun pengelola toko" : "Masuk untuk kelola warung Anda"}</p>
+          <p className="text-slate-500 mt-1 text-sm">
+            {isRegistering ? 'Buat akun pengelola toko' : 'Masuk untuk kelola warung Anda'}
+          </p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
@@ -145,57 +163,91 @@ const Login: React.FC = () => {
           {isRegistering && (
             <>
               <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
-                <button type="button" onClick={() => setRole("owner")} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === "owner" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}>
-                  PEMILIK
-                </button>
-                <button type="button" onClick={() => setRole("staff")} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === "staff" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}>
-                  KASIR
-                </button>
+                 <button 
+                   type="button" 
+                   onClick={() => setRole('owner')}
+                   className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === 'owner' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                 >
+                    PEMILIK
+                 </button>
+                 <button 
+                   type="button" 
+                   onClick={() => setRole('staff')}
+                   className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === 'staff' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                 >
+                    KASIR
+                 </button>
               </div>
 
-              <Input label="Nama Lengkap" placeholder="Nama Anda" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+              <Input
+                label="Nama Lengkap"
+                placeholder="Nama Anda"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                required
+              />
 
-              {role === "staff" && (
+              {role === 'staff' && (
                 <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-2">
-                  <Input label="Warung ID (Dari Pemilik)" placeholder="Masukkan Kode Warung" value={warungIdInput} onChange={(e) => setWarungIdInput(e.target.value)} required />
-                  <p className="text-[10px] text-amber-700 mt-1">Minta Pemilik untuk memberikan Warung ID dari menu Pengaturan.</p>
+                  <Input
+                    label="Warung ID (Dari Pemilik)"
+                    placeholder="W-XXXXXX"
+                    value={warungIdInput}
+                    onChange={(e) => setWarungIdInput(e.target.value)}
+                    required
+                  />
+                  <p className="text-[10px] text-amber-700 mt-1">Minta Pemilik memberikan Warung ID dari menu Pengaturan.</p>
                 </div>
               )}
             </>
           )}
 
-          <Input label="Email" type="email" placeholder="admin@warung.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Input
+            label="Email"
+            type="email"
+            placeholder="admin@warung.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
 
-          <Input label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <Input
+            label="Password"
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
 
           <Button type="submit" className="w-full py-2.5 font-bold" disabled={loading}>
             {loading ? <i className="fa-solid fa-circle-notch fa-spin mr-2"></i> : null}
-            {isRegistering ? "Daftar" : "Masuk"}
+            {isRegistering ? 'Daftar Sekarang' : 'Masuk'}
           </Button>
 
           <div className="text-center mt-4">
             <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-blue-600 hover:underline font-medium">
-              {isRegistering ? "Sudah punya akun? Login" : "Belum punya akun? Daftar"}
+              {isRegistering ? 'Sudah punya akun? Login' : 'Belum punya akun? Daftar'}
             </button>
           </div>
 
           {!isRegistering && (
             <>
               <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-slate-200"></span>
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase">
-                  <span className="bg-white px-2 text-slate-400">Atau</span>
-                </div>
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-200"></span></div>
+                <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400">Atau</span></div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
+              <button 
+                type="button" 
+                onClick={handleGoogleLogin} 
                 className="w-full flex items-center justify-center gap-3 py-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-slate-700 text-sm font-medium active:scale-[0.98]"
               >
-                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" alt="Google Logo" className="w-5 h-5 object-contain" />
+                <img 
+                  src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" 
+                  alt="Google Logo" 
+                  className="w-5 h-5 object-contain" 
+                />
                 Masuk dengan Google
               </button>
             </>
