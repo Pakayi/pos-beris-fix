@@ -94,18 +94,24 @@ const Reports: React.FC = () => {
   };
 
   const handleExportExcel = () => {
-    const headers = ["ID", "Waktu", "Total"];
-    const rows = filteredTx.map((t) => [t.id, new Date(t.timestamp).toLocaleString(), t.totalAmount]);
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    // Header CSV
+    const headers = ["ID Transaksi", "Tanggal", "Metode", "Total", "Potongan"];
+    // Baris data
+    const rows = filteredTx.map((t) => [t.id, new Date(t.timestamp).toLocaleString("id-ID"), t.paymentMethod.toUpperCase(), t.totalAmount, t.discountAmount || 0]);
+
+    // Gabungkan menjadi string CSV
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+    // Proses download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.setAttribute("hidden", "");
-    a.setAttribute("href", url);
-    a.setAttribute("download", `transaksi_${range}.csv`);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Laporan_Transaksi_${range}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -165,8 +171,8 @@ const Reports: React.FC = () => {
             <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-solid fa-circle-notch fa-spin" : "fa-solid fa-file-pdf"}>
               {isProcessing ? "Memproses..." : "Cetak PDF"}
             </Button>
-            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-solid fa-file-excel">
-              Ekspor CSV (Excel)
+            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-solid fa-file-csv">
+              Ekspor CSV
             </Button>
           </Card>
 
