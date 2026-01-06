@@ -3,7 +3,6 @@ import { db } from "../services/db";
 import { Transaction, Product, AppSettings } from "../types";
 import { Card, Button, Badge } from "../components/UI";
 import { jsPDF } from "jspdf";
-import * as XLSX from "xlsx";
 
 type DateRange = "today" | "week" | "month" | "all";
 
@@ -95,49 +94,18 @@ const Reports: React.FC = () => {
   };
 
   const handleExportExcel = () => {
-    setIsProcessing(true);
-    try {
-      // Menyiapkan data untuk Excel
-      const excelData = filteredTx.map((t, index) => {
-        // Hitung untung per transaksi
-        let profit = 0;
-        t.items.forEach((item) => {
-          const cost = (item.buyPrice || item.price * 0.8) * item.quantity;
-          profit += item.price * item.quantity - cost;
-        });
-        if (t.discountAmount) profit -= t.discountAmount;
-
-        return {
-          No: index + 1,
-          "ID Transaksi": t.id,
-          Tanggal: new Date(t.timestamp).toLocaleDateString("id-ID"),
-          Waktu: new Date(t.timestamp).toLocaleTimeString("id-ID"),
-          Pelanggan: t.customerName || "Umum",
-          Item: t.items.map((i) => `${i.productName} (${i.quantity})`).join(", "),
-          Metode: t.paymentMethod.toUpperCase(),
-          "Omzet (Rp)": t.totalAmount,
-          "Potongan (Rp)": t.discountAmount || 0,
-          "Untung (Rp)": profit,
-        };
-      });
-
-      // Membuat workbook dan sheet
-      const worksheet = XLSX.utils.json_to_sheet(excelData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Penjualan");
-
-      // Atur lebar kolom (opsional agar lebih rapi)
-      const wscols = [{ wch: 5 }, { wch: 20 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 40 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
-      worksheet["!cols"] = wscols;
-
-      // Download file
-      XLSX.writeFile(workbook, `Laporan_${settings.storeName}_${range}_${new Date().getTime()}.xlsx`);
-    } catch (e) {
-      console.error(e);
-      alert("Gagal mengekspor ke Excel");
-    } finally {
-      setIsProcessing(false);
-    }
+    const headers = ["ID", "Waktu", "Total"];
+    const rows = filteredTx.map((t) => [t.id, new Date(t.timestamp).toLocaleString(), t.totalAmount]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.setAttribute("hidden", "");
+    a.setAttribute("href", url);
+    a.setAttribute("download", `transaksi_${range}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
@@ -197,8 +165,8 @@ const Reports: React.FC = () => {
             <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-solid fa-circle-notch fa-spin" : "fa-solid fa-file-pdf"}>
               {isProcessing ? "Memproses..." : "Cetak PDF"}
             </Button>
-            <Button onClick={handleExportExcel} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-solid fa-circle-notch fa-spin" : "fa-solid fa-file-excel"}>
-              {isProcessing ? "Mengekspor..." : "Ekspor Excel (.xlsx)"}
+            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-solid fa-file-excel">
+              Ekspor CSV (Excel)
             </Button>
           </Card>
 
