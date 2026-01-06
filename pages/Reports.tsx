@@ -3,6 +3,7 @@ import { db } from "../services/db";
 import { Transaction, Product, AppSettings } from "../types";
 import { Card, Button, Badge } from "../components/UI";
 import { jsPDF } from "jspdf";
+import * as XLSX from "xlsx";
 
 type DateRange = "today" | "week" | "month" | "all";
 
@@ -94,24 +95,55 @@ const Reports: React.FC = () => {
   };
 
   const handleExportExcel = () => {
-    // Header CSV
-    const headers = ["ID Transaksi", "Tanggal", "Metode", "Total", "Potongan"];
-    // Baris data
-    const rows = filteredTx.map((t) => [t.id, new Date(t.timestamp).toLocaleString("id-ID"), t.paymentMethod.toUpperCase(), t.totalAmount, t.discountAmount || 0]);
+    try {
+      if (filteredTx.length === 0) {
+        alert("Tidak ada data untuk diekspor.");
+        return;
+      }
 
-    // Gabungkan menjadi string CSV
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      // 1. Siapkan data JSON yang rapi (ini akan jadi kolom di Excel)
+      const excelData = filteredTx.map((t) => ({
+        "ID Transaksi": t.id,
+        Tanggal: new Date(t.timestamp).toLocaleString("id-ID"),
+        Pelanggan: t.customerName || "Umum",
+        "Metode Bayar": t.paymentMethod.toUpperCase(),
+        "Item Barang": t.items.map((i) => `${i.productName} (${i.quantity} ${i.unitName})`).join("; "),
+        "Total Belanja (Rp)": t.totalAmount,
+        "Diskon (Rp)": t.discountAmount || 0,
+        "Untung (Rp)":
+          t.items.reduce((sum, item) => {
+            const cost = (item.buyPrice || item.price * 0.8) * item.quantity;
+            return sum + (item.price * item.quantity - cost);
+          }, 0) - (t.discountAmount || 0),
+      }));
 
-    // Proses download
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Laporan_Transaksi_${range}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // 2. Buat sheet dari JSON
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+      // 3. Atur lebar kolom (biar gak kepotong pas dibuka)
+      const wscols = [
+        { wch: 15 }, // ID
+        { wch: 25 }, // Tanggal
+        { wch: 15 }, // Pelanggan
+        { wch: 15 }, // Metode
+        { wch: 45 }, // Item Barang
+        { wch: 18 }, // Total
+        { wch: 15 }, // Diskon
+        { wch: 15 }, // Untung
+      ];
+      worksheet["!cols"] = wscols;
+
+      // 4. Masukkan ke Workbook
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Penjualan");
+
+      // 5. Download file
+      const dateStr = new Date().toISOString().split("T")[0];
+      XLSX.writeFile(workbook, `Laporan_Warung_${range}_${dateStr}.xlsx`);
+    } catch (error) {
+      console.error("Gagal ekspor Excel:", error);
+      alert("Terjadi kesalahan saat membuat file Excel.");
+    }
   };
 
   return (
@@ -171,8 +203,8 @@ const Reports: React.FC = () => {
             <Button onClick={handlePrintPDF} disabled={isProcessing} variant="outline" className="w-full justify-start text-slate-600" icon={isProcessing ? "fa-solid fa-circle-notch fa-spin" : "fa-solid fa-file-pdf"}>
               {isProcessing ? "Memproses..." : "Cetak PDF"}
             </Button>
-            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-solid fa-file-csv">
-              Ekspor CSV
+            <Button onClick={handleExportExcel} variant="outline" className="w-full justify-start text-slate-600" icon="fa-solid fa-file-excel">
+              Ekspor Excel (.xlsx)
             </Button>
           </Card>
 
