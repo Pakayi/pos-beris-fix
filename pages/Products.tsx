@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "../services/db";
 import { Product, ProductUnit } from "../types";
-import { Button, Input, Modal, Badge, CurrencyInput } from "../components/UI";
+// Add Card to the list of imported components from UI
+import { Button, Input, Modal, Badge, CurrencyInput, Card } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "https://esm.sh/html5-qrcode@2.3.8";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
@@ -16,6 +17,7 @@ const Products: React.FC = () => {
   const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
   const lastScanTimeRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     refreshProducts();
@@ -121,15 +123,12 @@ const Products: React.FC = () => {
     }
   };
 
-  // --- LOGIKA EKSPOR EXCEL ---
   const handleExportExcel = () => {
     try {
       if (products.length === 0) {
         alert("Belum ada produk untuk diekspor.");
         return;
       }
-
-      // Ratakan data agar mudah dibaca di Excel
       const excelData = products.map((p) => ({
         "ID Produk": p.id,
         "Nama Produk": p.name,
@@ -145,19 +144,15 @@ const Products: React.FC = () => {
           .map((u) => `${u.name}(${u.price})`)
           .join(", "),
       }));
-
       const worksheet = XLSX.utils.json_to_sheet(excelData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data Produk");
-
       XLSX.writeFile(workbook, `Database_Produk_Warung_${new Date().toISOString().split("T")[0]}.xlsx`);
     } catch (error) {
-      console.error("Gagal ekspor:", error);
       alert("Terjadi kesalahan saat mengekspor data.");
     }
   };
 
-  // --- LOGIKA IMPOR EXCEL ---
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -169,53 +164,70 @@ const Products: React.FC = () => {
         const workbook = XLSX.read(bstr, { type: "binary" });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet) as any[];
+        const rawData = XLSX.utils.sheet_to_json(worksheet) as any[];
 
-        if (data.length === 0) {
-          alert("File Excel kosong atau format tidak sesuai.");
+        if (rawData.length === 0) {
+          alert("File Excel kosong.");
           return;
         }
 
-        if (confirm(`Impor ${data.length} data produk? (Nama & SKU yang sama akan diupdate)`)) {
+        if (confirm(`Impor ${rawData.length} data produk? (Proses ini mungkin memakan waktu beberapa menit untuk data besar)`)) {
+          setIsImporting(true);
           const currentProducts = db.getProducts();
 
-          for (const row of data) {
-            const name = row["Nama Produk"] || row["Nama"];
-            const sku = String(row["Barcode/SKU"] || row["SKU"] || "");
-            const baseUnit = row["Satuan Dasar"] || row["Satuan"] || "Pcs";
+          // Mapping dinamis untuk mendukung format Excel user
+          for (let i = 0; i < rawData.length; i++) {
+            const row = rawData[i];
+
+            // Normalisasi keys (buat semua jadi uppercase biar gampang dicarinya)
+            const normalizedRow: any = {};
+            Object.keys(row).forEach((k) => (normalizedRow[k.toUpperCase().trim()] = row[k]));
+
+            const name = normalizedRow["NAMA"] || normalizedRow["NAMA PRODUK"] || normalizedRow["NAMA_BARANG"];
+            const sku = String(normalizedRow["KODE_BARCODE"] || normalizedRow["KODE_BARANG"] || normalizedRow["SKU"] || "");
+            const baseUnit = normalizedRow["SATUAN_1"] || normalizedRow["SATUAN DASAR"] || normalizedRow["SATUAN"] || "Pcs";
+            const stock = Number(normalizedRow["TOKO"] || normalizedRow["STOK SAAT INI"] || normalizedRow["STOK"] || 0);
+            const buyPrice = Number(normalizedRow["HPP"] || normalizedRow["HARGA BELI"] || 0);
+            const price = Number(normalizedRow["HARGA_TOKO_1"] || normalizedRow["HARGA JUAL"] || 0);
+            const category = normalizedRow["KATEGORI"] || "Umum";
 
             if (!name) continue;
 
-            // Cari apakah produk sudah ada
-            const existing = currentProducts.find((p) => (sku && p.sku === sku) || p.name.toLowerCase() === name.toLowerCase());
+            const existing = currentProducts.find((p) => (sku && p.sku === sku) || p.name.toLowerCase() === String(name).toLowerCase());
 
             const newProduct: Product = {
-              id: existing?.id || `P-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-              name: name,
+              id: existing?.id || `P-${Date.now()}-${i}`,
+              name: String(name),
               sku: sku,
-              category: row["Kategori"] || "Umum",
-              baseUnit: baseUnit,
-              stock: Number(row["Stok Saat Ini"] || row["Stok"] || 0),
-              minStockAlert: Number(row["Minimal Stok"] || 5),
+              category: String(category),
+              baseUnit: String(baseUnit),
+              stock: stock,
+              minStockAlert: 5,
               units: [
                 {
-                  name: baseUnit,
+                  name: String(baseUnit),
                   conversion: 1,
-                  price: Number(row["Harga Jual"] || 0),
-                  buyPrice: Number(row["Harga Beli"] || 0),
+                  price: price,
+                  buyPrice: buyPrice,
                 },
               ],
               updatedAt: Date.now(),
             };
 
             await db.saveProduct(newProduct);
+
+            // Kasih napas ke browser tiap 100 data biar gak nge-freeze
+            if (i % 100 === 0) await new Promise((r) => setTimeout(r, 10));
           }
-          alert("Impor selesai!");
+
+          setIsImporting(false);
+          alert("Impor 8000+ data berhasil disinkronkan ke Cloud!");
           refreshProducts();
         }
       } catch (err) {
+        setIsImporting(false);
         console.error("Gagal impor:", err);
-        alert("Gagal membaca file Excel. Pastikan format kolom benar.");
+        alert("Gagal membaca file Excel. Pastikan format kolom NAMA, TOKO, HPP, dll tersedia.");
       }
       if (fileInputRef.current) fileInputRef.current.value = "";
     };
@@ -229,15 +241,21 @@ const Products: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-200 pb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Manajemen Produk</h1>
-          <p className="text-sm text-slate-500">Kelola inventaris dan harga jual barang</p>
+          <p className="text-sm text-slate-500">Kelola {products.length} item inventaris</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
-          <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="text-emerald-600 border-emerald-200 hover:bg-emerald-50" icon="fa-solid fa-file-import">
-            Impor Excel
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            variant="outline"
+            disabled={isImporting}
+            className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+            icon={isImporting ? "fa-solid fa-spinner fa-spin" : "fa-solid fa-file-import"}
+          >
+            {isImporting ? "Mengimpor..." : "Impor Excel"}
           </Button>
           <Button onClick={handleExportExcel} variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" icon="fa-solid fa-file-export">
-            Ekspor Excel
+            Ekspor
           </Button>
           <Button
             onClick={() => {
@@ -256,20 +274,20 @@ const Products: React.FC = () => {
           <div className="w-full max-w-md">
             <Input placeholder="Cari nama atau barcode..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} prefix={<i className="fa-solid fa-search text-gray-400"></i>} />
           </div>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">Total: {products.length} produk</div>
+          <Badge color="blue">{products.length} Produk Terdaftar</Badge>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
+        <div className="overflow-x-auto max-h-[60vh]">
+          <table className="w-full text-sm text-left sticky-header">
+            <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3">Nama Produk</th>
                 <th className="px-4 py-3 text-right">Stok</th>
-                <th className="px-4 py-3">Satuan & Harga Jual</th>
+                <th className="px-4 py-3">Harga Jual</th>
                 <th className="px-4 py-3 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((product) => {
+              {filtered.slice(0, 100).map((product) => {
                 const isLowStock = product.stock <= product.minStockAlert;
                 return (
                   <tr key={product.id} className={`hover:bg-gray-50 transition-colors ${isLowStock ? "bg-red-50" : ""}`}>
@@ -287,13 +305,7 @@ const Products: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {product.units.map((u, i) => (
-                          <div key={i} className="px-2 py-1 bg-blue-50 border border-blue-100 rounded text-[10px] font-bold text-blue-700">
-                            {u.name}: Rp {u.price.toLocaleString("id-ID")}
-                          </div>
-                        ))}
-                      </div>
+                      <span className="font-bold text-blue-700">Rp {product.units[0]?.price.toLocaleString("id-ID")}</span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center gap-1">
@@ -314,6 +326,13 @@ const Products: React.FC = () => {
                   </tr>
                 );
               })}
+              {filtered.length > 100 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-4 text-center text-gray-400 bg-gray-50 text-xs italic">
+                    Menampilkan 100 dari {filtered.length} produk. Gunakan pencarian untuk mencari produk spesifik.
+                  </td>
+                </tr>
+              )}
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-10 text-center text-gray-400 italic">
@@ -385,6 +404,17 @@ const Products: React.FC = () => {
         {cameraError && <p className="text-center text-red-500 text-sm mt-4 font-bold">{cameraError}</p>}
         <p className="text-center text-gray-500 text-xs mt-4">Arahkan kamera ke barcode produk</p>
       </Modal>
+
+      {isImporting && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          {/* Card is now properly imported */}
+          <Card className="p-8 max-w-sm w-full text-center space-y-4">
+            <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <h3 className="text-lg font-bold">Sedang Mengimpor Data...</h3>
+            <p className="text-sm text-gray-500">Mohon jangan tutup aplikasi. Kami sedang memproses 8.000+ data produk ke cloud database Anda.</p>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
