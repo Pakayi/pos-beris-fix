@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { db } from "../services/db";
 import { Product, ProductUnit, CartItem, Transaction, AppSettings, Customer } from "../types";
 import { Button, Input, Modal, Card } from "../components/UI";
-import { jsPDF } from "jspdf";
+import { jsPDF } from "https://aistudiocdn.com/jspdf@^2.5.1";
 import { printerService } from "../services/printer";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "https://esm.sh/html5-qrcode@2.3.8";
 
 const POS: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -14,25 +14,21 @@ const POS: React.FC = () => {
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "qris">("cash");
 
-  // Customer State
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
 
-  // Success & Print State
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [paperSize, setPaperSize] = useState<"58mm" | "80mm">("58mm");
   const [settings, setSettings] = useState<AppSettings>(db.getSettings());
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Scanner State
   const [showScanner, setShowScanner] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // Unit Selection State
   const [scanSelection, setScanSelection] = useState<Product | null>(null);
 
   const lastScanTimeRef = useRef<number>(0);
@@ -44,7 +40,6 @@ const POS: React.FC = () => {
     setAllCustomers(db.getCustomers());
   }, []);
 
-  // Reset payment method when checkout opens
   useEffect(() => {
     if (showCheckout) {
       setPaymentMethod("cash");
@@ -52,7 +47,6 @@ const POS: React.FC = () => {
     }
   }, [showCheckout]);
 
-  // AUTO-START SCANNER LOGIC
   useEffect(() => {
     if (showScanner) {
       setCameraError(null);
@@ -120,21 +114,6 @@ const POS: React.FC = () => {
     } catch (e) {}
   };
 
-  const handleUnitSelectFromScan = (unit: ProductUnit) => {
-    if (scanSelection) {
-      addToCart(scanSelection, unit);
-      setScanSelection(null);
-      setLastScanned(scanSelection.sku);
-      setTimeout(() => setLastScanned(null), 2000);
-      if (scannerInstanceRef.current) scannerInstanceRef.current.resume();
-    }
-  };
-
-  const cancelScanSelection = () => {
-    setScanSelection(null);
-    if (scannerInstanceRef.current) scannerInstanceRef.current.resume();
-  };
-
   const addToCart = (product: Product, unit: ProductUnit) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.productId === product.id && item.unitName === unit.name);
@@ -193,7 +172,7 @@ const POS: React.FC = () => {
   const change = (parseInt(amountPaid) || 0) - calculations.total;
 
   const handleCheckout = () => {
-    const paid = paymentMethod === "qris" ? calculations.total : parseInt(amountPaid) || 0;
+    const paid = paymentMethod === "cash" ? calculations.total : parseInt(amountPaid) || 0;
     if (paymentMethod === "cash" && paid < calculations.total) {
       alert("Pembayaran kurang!");
       return;
@@ -328,8 +307,6 @@ const POS: React.FC = () => {
 
   const filteredProducts = products.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.includes(search));
   const filteredCustomers = allCustomers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.phone.includes(customerSearch));
-
-  // Generate QRIS simulated string or static QR
   const qrisUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PRO_WARUNG_POS_${calculations.total}`;
 
   return (
@@ -415,17 +392,15 @@ const POS: React.FC = () => {
               QRIS
             </button>
           </div>
-
           <div className="text-center py-4 bg-blue-50 rounded-xl border border-blue-100">
             <p className="text-sm text-blue-600">Total Tagihan</p>
             <p className="text-3xl font-bold text-blue-800">Rp {calculations.total.toLocaleString("id-ID")}</p>
           </div>
-
           {paymentMethod === "cash" ? (
             <div className="space-y-4">
               <Input type="number" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} label="Uang Diterima" placeholder="0" className="text-lg" autoFocus />
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setAmountPaid(calculations.total.toString())} className="col-span-2 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-black shadow-sm">
+                <button onClick={() => setAmountPaid(calculations.total.toString())} className="col-span-2 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-black">
                   UANG PAS
                 </button>
                 {[50000, 100000].map((val) => (
@@ -452,74 +427,9 @@ const POS: React.FC = () => {
               <p className="text-xs text-slate-500 px-6">Tunjukkan QR ini ke pelanggan. Pastikan dana sudah masuk ke aplikasi merchant Anda sebelum klik tombol di bawah.</p>
             </div>
           )}
-
           <Button onClick={handleCheckout} className="w-full py-3 mt-2" disabled={paymentMethod === "cash" && (!amountPaid || parseInt(amountPaid) < calculations.total)}>
             {paymentMethod === "cash" ? "Proses Tunai" : "Konfirmasi QRIS Terbayar"}
           </Button>
-        </div>
-      </Modal>
-
-      <Modal isOpen={showCustomerModal} onClose={() => setShowCustomerModal(false)} title="Pilih Pelanggan">
-        <div className="space-y-3">
-          <Input placeholder="Cari..." value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} autoFocus />
-          <div className="max-h-[300px] overflow-y-auto border rounded-lg divide-y">
-            <button
-              onClick={() => {
-                setSelectedCustomer(null);
-                setShowCustomerModal(false);
-              }}
-              className="w-full text-left p-3 hover:bg-gray-50 flex items-center gap-3"
-            >
-              <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-                <i className="fa-solid fa-user"></i>
-              </div>
-              <p className="font-medium text-sm">Tamu Umum</p>
-            </button>
-            {filteredCustomers.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => {
-                  setSelectedCustomer(c);
-                  setShowCustomerModal(false);
-                }}
-                className="w-full text-left p-3 hover:bg-blue-50 flex items-center gap-3"
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">{c.tier[0]}</div>
-                <div>
-                  <p className="font-medium text-sm">{c.name}</p>
-                  <p className="text-[10px] text-gray-500">{c.phone}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={showSuccessModal} onClose={() => setShowSuccessModal(false)} title="Transaksi Berhasil!">
-        <div className="text-center space-y-6">
-          <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto text-3xl animate-bounce">
-            <i className="fa-solid fa-check"></i>
-          </div>
-          {lastTransaction?.paymentMethod === "cash" && (
-            <div className="space-y-1">
-              <p className="text-gray-500 text-sm">Kembalian</p>
-              <p className="text-3xl font-black text-slate-800">Rp {lastTransaction.change.toLocaleString("id-ID")}</p>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3 pt-4">
-            <Button onClick={handlePrint} variant="outline" icon="fa-solid fa-print">
-              Cetak Struk
-            </Button>
-            <Button onClick={handleDownloadPDF} variant="outline" icon="fa-solid fa-file-pdf">
-              Simpan PDF
-            </Button>
-            <Button onClick={handleShareWA} variant="outline" icon="fa-brands fa-whatsapp" className="col-span-2 text-green-600 border-green-200 hover:bg-green-50">
-              WhatsApp
-            </Button>
-            <Button onClick={() => setShowSuccessModal(false)} className="col-span-2 py-3 mt-2">
-              Tutup
-            </Button>
-          </div>
         </div>
       </Modal>
 

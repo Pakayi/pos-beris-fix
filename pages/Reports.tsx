@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import { db } from "../services/db";
 import { Transaction, Product, AppSettings } from "../types";
 import { Card, Button, Badge } from "../components/UI";
-import { jsPDF } from "jspdf";
-import * as XLSX from "xlsx";
+import { jsPDF } from "https://aistudiocdn.com/jspdf@^2.5.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 type DateRange = "today" | "week" | "month" | "all";
 
@@ -101,7 +101,6 @@ const Reports: React.FC = () => {
         return;
       }
 
-      // 1. Siapkan data JSON yang rapi (ini akan jadi kolom di Excel)
       const excelData = filteredTx.map((t) => ({
         "ID Transaksi": t.id,
         Tanggal: new Date(t.timestamp).toLocaleString("id-ID"),
@@ -117,27 +116,14 @@ const Reports: React.FC = () => {
           }, 0) - (t.discountAmount || 0),
       }));
 
-      // 2. Buat sheet dari JSON
       const worksheet = XLSX.utils.json_to_sheet(excelData);
 
-      // 3. Atur lebar kolom (biar gak kepotong pas dibuka)
-      const wscols = [
-        { wch: 15 }, // ID
-        { wch: 25 }, // Tanggal
-        { wch: 15 }, // Pelanggan
-        { wch: 15 }, // Metode
-        { wch: 45 }, // Item Barang
-        { wch: 18 }, // Total
-        { wch: 15 }, // Diskon
-        { wch: 15 }, // Untung
-      ];
+      const wscols = [{ wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 45 }, { wch: 18 }, { wch: 15 }, { wch: 15 }];
       worksheet["!cols"] = wscols;
 
-      // 4. Masukkan ke Workbook
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Penjualan");
 
-      // 5. Download file
       const dateStr = new Date().toISOString().split("T")[0];
       XLSX.writeFile(workbook, `Laporan_Warung_${range}_${dateStr}.xlsx`);
     } catch (error) {
