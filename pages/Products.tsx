@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "../services/db";
 import { Product, ProductUnit } from "../types";
-// Add Card to the list of imported components from UI
 import { Button, Input, Modal, Badge, CurrencyInput, Card } from "../components/UI";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "https://esm.sh/html5-qrcode@2.3.8";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
@@ -123,6 +122,30 @@ const Products: React.FC = () => {
     }
   };
 
+  // --- Multi Unit Logic ---
+  const addUnit = () => {
+    const units = [...(editingProduct.units || [])];
+    units.push({ name: "", conversion: 1, price: 0, buyPrice: 0 });
+    setEditingProduct({ ...editingProduct, units });
+  };
+
+  const removeUnit = (index: number) => {
+    if (index === 0) return; // Unit dasar tidak bisa dihapus
+    const units = editingProduct.units.filter((_: any, i: number) => i !== index);
+    setEditingProduct({ ...editingProduct, units });
+  };
+
+  const updateUnit = (index: number, field: keyof ProductUnit, value: any) => {
+    const units = [...editingProduct.units];
+    units[index] = { ...units[index], [field]: value };
+    // Jika unit dasar diubah namanya, sinkronkan baseUnit
+    if (index === 0 && field === "name") {
+      setEditingProduct({ ...editingProduct, units, baseUnit: value });
+    } else {
+      setEditingProduct({ ...editingProduct, units });
+    }
+  };
+
   const handleExportExcel = () => {
     try {
       if (products.length === 0) {
@@ -175,11 +198,8 @@ const Products: React.FC = () => {
           setIsImporting(true);
           const currentProducts = db.getProducts();
 
-          // Mapping dinamis untuk mendukung format Excel user
           for (let i = 0; i < rawData.length; i++) {
             const row = rawData[i];
-
-            // Normalisasi keys (buat semua jadi uppercase biar gampang dicarinya)
             const normalizedRow: any = {};
             Object.keys(row).forEach((k) => (normalizedRow[k.toUpperCase().trim()] = row[k]));
 
@@ -203,31 +223,30 @@ const Products: React.FC = () => {
               baseUnit: String(baseUnit),
               stock: stock,
               minStockAlert: 5,
-              units: [
-                {
-                  name: String(baseUnit),
-                  conversion: 1,
-                  price: price,
-                  buyPrice: buyPrice,
-                },
-              ],
+              units: existing
+                ? existing.units
+                : [
+                    {
+                      name: String(baseUnit),
+                      conversion: 1,
+                      price: price,
+                      buyPrice: buyPrice,
+                    },
+                  ],
               updatedAt: Date.now(),
             };
 
             await db.saveProduct(newProduct);
-
-            // Kasih napas ke browser tiap 100 data biar gak nge-freeze
             if (i % 100 === 0) await new Promise((r) => setTimeout(r, 10));
           }
 
           setIsImporting(false);
-          alert("Impor 8000+ data berhasil disinkronkan ke Cloud!");
+          alert("Impor berhasil!");
           refreshProducts();
         }
       } catch (err) {
         setIsImporting(false);
-        console.error("Gagal impor:", err);
-        alert("Gagal membaca file Excel. Pastikan format kolom NAMA, TOKO, HPP, dll tersedia.");
+        alert("Gagal membaca file Excel.");
       }
       if (fileInputRef.current) fileInputRef.current.value = "";
     };
@@ -259,7 +278,7 @@ const Products: React.FC = () => {
           </Button>
           <Button
             onClick={() => {
-              setEditingProduct({ units: [{ name: "Pcs", conversion: 1, price: 0, buyPrice: 0 }], stock: "", minStockAlert: "" });
+              setEditingProduct({ units: [{ name: "Pcs", conversion: 1, price: 0, buyPrice: 0 }], stock: "", minStockAlert: "", baseUnit: "Pcs" });
               setIsModalOpen(true);
             }}
             icon="fa-solid fa-plus"
@@ -274,7 +293,7 @@ const Products: React.FC = () => {
           <div className="w-full max-w-md">
             <Input placeholder="Cari nama atau barcode..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} prefix={<i className="fa-solid fa-search text-gray-400"></i>} />
           </div>
-          <Badge color="blue">{products.length} Produk Terdaftar</Badge>
+          <Badge color="blue">{products.length} Produk</Badge>
         </div>
         <div className="overflow-x-auto max-h-[60vh]">
           <table className="w-full text-sm text-left sticky-header">
@@ -282,7 +301,7 @@ const Products: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Nama Produk</th>
                 <th className="px-4 py-3 text-right">Stok</th>
-                <th className="px-4 py-3">Harga Jual</th>
+                <th className="px-4 py-3">Satuan & Harga</th>
                 <th className="px-4 py-3 text-center">Aksi</th>
               </tr>
             </thead>
@@ -293,19 +312,20 @@ const Products: React.FC = () => {
                   <tr key={product.id} className={`hover:bg-gray-50 transition-colors ${isLowStock ? "bg-red-50" : ""}`}>
                     <td className="px-4 py-3">
                       <div className="font-bold text-gray-900">{product.name}</div>
-                      <div className="flex gap-2 mt-0.5">
-                        <span className="text-[10px] text-gray-400 uppercase font-bold">{product.category}</span>
-                        <span className="text-[10px] text-gray-300 font-mono">| {product.sku || "-"}</span>
-                      </div>
+                      <div className="text-[10px] text-gray-400 font-mono">{product.sku || "-"}</div>
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      <div className="flex items-center justify-end gap-1">
-                        <span className={`font-bold ${isLowStock ? "text-red-600" : "text-gray-700"}`}>{product.stock}</span>
-                        <span className="text-[10px] text-gray-400 font-medium uppercase">{product.baseUnit}</span>
-                      </div>
+                      <span className={`font-bold ${isLowStock ? "text-red-600" : "text-gray-700"}`}>{product.stock}</span>
+                      <span className="text-[10px] text-gray-400 ml-1 uppercase">{product.baseUnit}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-bold text-blue-700">Rp {product.units[0]?.price.toLocaleString("id-ID")}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {product.units.map((u, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-bold border border-blue-100">
+                            {u.name}: {u.price.toLocaleString("id-ID")}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center gap-1">
@@ -326,20 +346,6 @@ const Products: React.FC = () => {
                   </tr>
                 );
               })}
-              {filtered.length > 100 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-4 text-center text-gray-400 bg-gray-50 text-xs italic">
-                    Menampilkan 100 dari {filtered.length} produk. Gunakan pencarian untuk mencari produk spesifik.
-                  </td>
-                </tr>
-              )}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-gray-400 italic">
-                    Produk tidak ditemukan.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
@@ -366,52 +372,54 @@ const Products: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Input label="Kategori" value={editingProduct.category || ""} onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })} />
-            <Input label="Satuan Dasar" value={editingProduct.baseUnit || ""} onChange={(e) => setEditingProduct({ ...editingProduct, baseUnit: e.target.value })} />
+            <Input label="Satuan Dasar" value={editingProduct.baseUnit || ""} onChange={(e) => updateUnit(0, "name", e.target.value)} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 border-b pb-4">
             <Input label="Stok Saat Ini" type="number" value={editingProduct.stock} onChange={(e) => setEditingProduct({ ...editingProduct, stock: e.target.value })} />
             <Input label="Min. Stok Alert" type="number" value={editingProduct.minStockAlert} onChange={(e) => setEditingProduct({ ...editingProduct, minStockAlert: e.target.value })} />
           </div>
 
-          <div className="border-t pt-4">
-            <h4 className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-widest">Harga Jual (Satuan Utama)</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <CurrencyInput
-                label="Harga Beli"
-                value={editingProduct.units?.[0]?.buyPrice || 0}
-                onChange={(val) => {
-                  const units = [...(editingProduct.units || [{ name: editingProduct.baseUnit || "Pcs", conversion: 1, price: 0, buyPrice: 0 }])];
-                  units[0].buyPrice = val;
-                  setEditingProduct({ ...editingProduct, units });
-                }}
-              />
-              <CurrencyInput
-                label="Harga Jual"
-                value={editingProduct.units?.[0]?.price || 0}
-                onChange={(val) => {
-                  const units = [...(editingProduct.units || [{ name: editingProduct.baseUnit || "Pcs", conversion: 1, price: 0, buyPrice: 0 }])];
-                  units[0].price = val;
-                  setEditingProduct({ ...editingProduct, units });
-                }}
-              />
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Daftar Satuan & Harga</h4>
+              <Button size="sm" variant="outline" onClick={addUnit} icon="fa-solid fa-plus-circle">
+                Tambah Satuan
+              </Button>
             </div>
+
+            {editingProduct.units?.map((unit: any, idx: number) => (
+              <div key={idx} className={`p-3 rounded-xl border ${idx === 0 ? "bg-blue-50 border-blue-100" : "bg-gray-50 border-gray-200"} space-y-2 relative`}>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input label={idx === 0 ? "Nama Satuan Utama" : "Nama Satuan"} value={unit.name} onChange={(e) => updateUnit(idx, "name", e.target.value)} placeholder="Misal: Dus" />
+                  <Input label="Konversi (Isi)" type="number" disabled={idx === 0} value={unit.conversion} onChange={(e) => updateUnit(idx, "conversion", Number(e.target.value))} placeholder="Misal: 10" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <CurrencyInput label="Harga Beli" value={unit.buyPrice} onChange={(val) => updateUnit(idx, "buyPrice", val)} />
+                  <CurrencyInput label="Harga Jual" value={unit.price} onChange={(val) => updateUnit(idx, "price", val)} />
+                </div>
+                {idx > 0 && (
+                  <button onClick={() => removeUnit(idx)} className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] shadow-sm">
+                    <i className="fa-solid fa-times"></i>
+                  </button>
+                )}
+                {idx === 0 && <span className="absolute top-2 right-3 text-[9px] font-bold text-blue-500 uppercase">Utama</span>}
+              </div>
+            ))}
           </div>
         </div>
       </Modal>
 
       <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode">
         <div id="product-scanner" className="w-full max-w-[300px] mx-auto bg-black rounded-xl overflow-hidden min-h-[250px] border-2 border-blue-500"></div>
-        {cameraError && <p className="text-center text-red-500 text-sm mt-4 font-bold">{cameraError}</p>}
-        <p className="text-center text-gray-500 text-xs mt-4">Arahkan kamera ke barcode produk</p>
+        <p className="text-center text-gray-500 text-xs mt-4">Scan barcode barang untuk mengisi SKU</p>
       </Modal>
 
       {isImporting && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-          {/* Card is now properly imported */}
-          <Card className="p-8 max-w-sm w-full text-center space-y-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 text-center">
+          <Card className="p-8 max-w-sm w-full space-y-4">
             <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <h3 className="text-lg font-bold">Sedang Mengimpor Data...</h3>
-            <p className="text-sm text-gray-500">Mohon jangan tutup aplikasi. Kami sedang memproses 8.000+ data produk ke cloud database Anda.</p>
+            <h3 className="text-lg font-bold">Sinkronisasi Data...</h3>
+            <p className="text-sm text-gray-500">Mohon tunggu, kami sedang mengimpor ribuan data ke database Anda.</p>
           </Card>
         </div>
       )}
