@@ -108,6 +108,7 @@ class DBService {
     if (!this.profile?.warungId) return;
     const wid = this.profile.warungId;
 
+    // Clear LocalStorage dulu (Biar tampilan langsung bersih)
     const keysToClear = [STORAGE_KEYS.PRODUCTS, STORAGE_KEYS.TRANSACTIONS, STORAGE_KEYS.CUSTOMERS, STORAGE_KEYS.SUPPLIERS, STORAGE_KEYS.PROCUREMENT, STORAGE_KEYS.DEBT_PAYMENTS];
     keysToClear.forEach((key) => localStorage.removeItem(key));
 
@@ -140,14 +141,11 @@ class DBService {
 
     const batch = writeBatch(db_fs);
 
-    // Data Demo: Suppliers
     const suppliers: Supplier[] = [
       { id: "S-DEMO-1", name: "PT Sembako Makmur", contact: "081122334455", address: "Pasar Induk Kramat Jati", description: "Supplier beras dan minyak" },
       { id: "S-DEMO-2", name: "Distributor Mie Jaya", contact: "085566778899", address: "Kawasan Industri Jababeka", description: "Spesialis mie instan" },
     ];
-    suppliers.forEach((s) => batch.set(doc(db_fs, `warungs/${wid}/suppliers`, s.id), this.sanitizeForFirestore(s)));
 
-    // Data Demo: Products
     const products: Product[] = [
       {
         id: "P-DEMO-1",
@@ -194,17 +192,26 @@ class DBService {
         ],
       },
     ];
-    products.forEach((p) => batch.set(doc(db_fs, `warungs/${wid}/products`, p.id), this.sanitizeForFirestore(p)));
 
-    // Data Demo: Customers
     const customers: Customer[] = [
       { id: "C-DEMO-1", name: "Ibu Budi (Tetangga)", phone: "081234567890", tier: "Gold", totalSpent: 1500000, debtBalance: 75000, joinedAt: now - 86400000 * 30 },
       { id: "C-DEMO-2", name: "Pak RT", phone: "089988776655", tier: "Silver", totalSpent: 500000, debtBalance: 0, joinedAt: now - 86400000 * 15 },
     ];
+
+    // Push ke Batch
+    suppliers.forEach((s) => batch.set(doc(db_fs, `warungs/${wid}/suppliers`, s.id), this.sanitizeForFirestore(s)));
+    products.forEach((p) => batch.set(doc(db_fs, `warungs/${wid}/products`, p.id), this.sanitizeForFirestore(p)));
     customers.forEach((c) => batch.set(doc(db_fs, `warungs/${wid}/customers`, c.id), this.sanitizeForFirestore(c)));
 
     try {
       await batch.commit();
+
+      // PERBAIKAN UTAMA: Update LocalStorage secara MANUAL sekarang juga!
+      // Jangan nunggu Cloud Sync, biar data langsung muncul di layar user.
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(suppliers));
+
       this.notifyAll();
     } catch (error) {
       console.error("Gagal injeksi data demo:", error);

@@ -105,13 +105,14 @@ const Settings: React.FC = () => {
       setIsMaintenanceMode(true);
       try {
         await db.injectDemoData();
+        // Sembunyikan spinner DULU, baru keluarin alert.
+        setIsMaintenanceMode(false);
         alert("Data demo berhasil dimuat!");
         window.location.hash = "#/";
       } catch (err: any) {
+        setIsMaintenanceMode(false);
         console.error(err);
         alert("Gagal memuat data: " + (err.message || "Cek koneksi atau izin Firebase."));
-      } finally {
-        setIsMaintenanceMode(false);
       }
     }
   };
@@ -122,12 +123,12 @@ const Settings: React.FC = () => {
       setIsMaintenanceMode(true);
       try {
         await db.wipeAllData();
+        setIsMaintenanceMode(false);
         alert("Reset berhasil.");
         window.location.hash = "#/";
       } catch (err: any) {
-        alert("Gagal reset: " + err.message);
-      } finally {
         setIsMaintenanceMode(false);
+        alert("Gagal reset: " + err.message);
       }
     }
   };
