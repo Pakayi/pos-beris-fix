@@ -1,6 +1,6 @@
 import { Product, Transaction, AppSettings, Customer, UserProfile, Supplier, Procurement, DebtPayment } from "../types";
 import { db_fs, auth } from "./firebase";
-import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, query, orderBy, writeBatch, getDocs } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, writeBatch, getDocs } from "firebase/firestore";
 
 const STORAGE_KEYS = {
   PRODUCTS: "warung_products",
@@ -104,51 +104,51 @@ class DBService {
     });
   }
 
-  // --- MAINTENANCE & DEMO ---
   async wipeAllData(): Promise<void> {
     if (!this.profile?.warungId) return;
     const wid = this.profile.warungId;
 
-    // Clear LocalStorage
-    localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
-    localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
-    localStorage.removeItem(STORAGE_KEYS.CUSTOMERS);
-    localStorage.removeItem(STORAGE_KEYS.SUPPLIERS);
-    localStorage.removeItem(STORAGE_KEYS.PROCUREMENT);
-    localStorage.removeItem(STORAGE_KEYS.DEBT_PAYMENTS);
+    const keysToClear = [STORAGE_KEYS.PRODUCTS, STORAGE_KEYS.TRANSACTIONS, STORAGE_KEYS.CUSTOMERS, STORAGE_KEYS.SUPPLIERS, STORAGE_KEYS.PROCUREMENT, STORAGE_KEYS.DEBT_PAYMENTS];
+    keysToClear.forEach((key) => localStorage.removeItem(key));
 
-    // Clear Cloud collections (Iterative delete)
-    const collections = ["products", "transactions", "customers", "suppliers", "procurements", "debt_payments"];
-    for (const colName of collections) {
-      const colRef = collection(db_fs, `warungs/${wid}/${colName}`);
-      const snapshot = await getDocs(colRef);
-      const batch = writeBatch(db_fs);
-      snapshot.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
+    const collectionNames = ["products", "transactions", "customers", "suppliers", "procurements", "debt_payments"];
+
+    try {
+      for (const colName of collectionNames) {
+        const colRef = collection(db_fs, `warungs/${wid}/${colName}`);
+        const snapshot = await getDocs(colRef);
+        if (snapshot.empty) continue;
+
+        const batch = writeBatch(db_fs);
+        snapshot.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    } catch (error) {
+      console.error("Gagal membersihkan data cloud:", error);
+      throw error;
     }
 
-    window.dispatchEvent(new Event("products-updated"));
-    window.dispatchEvent(new Event("customers-updated"));
-    window.dispatchEvent(new Event("debt-payments-updated"));
-    window.dispatchEvent(new Event("transactions-updated"));
+    this.notifyAll();
   }
 
   async injectDemoData(): Promise<void> {
     if (!this.profile?.warungId) return;
-    await this.wipeAllData();
-
     const wid = this.profile.warungId;
     const now = Date.now();
 
-    // 1. Demo Suppliers
-    const demoSuppliers: Supplier[] = [
+    await this.wipeAllData();
+
+    const batch = writeBatch(db_fs);
+
+    // Data Demo: Suppliers
+    const suppliers: Supplier[] = [
       { id: "S-DEMO-1", name: "PT Sembako Makmur", contact: "081122334455", address: "Pasar Induk Kramat Jati", description: "Supplier beras dan minyak" },
       { id: "S-DEMO-2", name: "Distributor Mie Jaya", contact: "085566778899", address: "Kawasan Industri Jababeka", description: "Spesialis mie instan" },
     ];
-    for (const s of demoSuppliers) await this.saveSupplier(s);
+    suppliers.forEach((s) => batch.set(doc(db_fs, `warungs/${wid}/suppliers`, s.id), this.sanitizeForFirestore(s)));
 
-    // 2. Demo Products (Multi Unit)
-    const demoProducts: Product[] = [
+    // Data Demo: Products
+    const products: Product[] = [
       {
         id: "P-DEMO-1",
         name: "Indomie Goreng Original",
@@ -181,26 +181,11 @@ class DBService {
       },
       {
         id: "P-DEMO-3",
-        name: "Telur Ayam Ras",
-        sku: "TLR-001",
-        category: "Sembako",
-        baseUnit: "Butir",
-        stock: 300,
-        minStockAlert: 50,
-        updatedAt: now,
-        supplierId: "S-DEMO-1",
-        units: [
-          { name: "Butir", conversion: 1, price: 2000, buyPrice: 1600 },
-          { name: "Peti", conversion: 150, price: 285000, buyPrice: 240000 },
-        ],
-      },
-      {
-        id: "P-DEMO-4",
         name: "Le Minerale 600ml",
         sku: "LM-600",
         category: "Minuman",
         baseUnit: "Botol",
-        stock: 24,
+        stock: 48,
         minStockAlert: 12,
         updatedAt: now,
         units: [
@@ -209,53 +194,29 @@ class DBService {
         ],
       },
     ];
-    for (const p of demoProducts) await this.saveProduct(p);
+    products.forEach((p) => batch.set(doc(db_fs, `warungs/${wid}/products`, p.id), this.sanitizeForFirestore(p)));
 
-    // 3. Demo Customers
-    const demoCustomers: Customer[] = [
+    // Data Demo: Customers
+    const customers: Customer[] = [
       { id: "C-DEMO-1", name: "Ibu Budi (Tetangga)", phone: "081234567890", tier: "Gold", totalSpent: 1500000, debtBalance: 75000, joinedAt: now - 86400000 * 30 },
       { id: "C-DEMO-2", name: "Pak RT", phone: "089988776655", tier: "Silver", totalSpent: 500000, debtBalance: 0, joinedAt: now - 86400000 * 15 },
     ];
-    for (const c of demoCustomers) await this.saveCustomer(c);
+    customers.forEach((c) => batch.set(doc(db_fs, `warungs/${wid}/customers`, c.id), this.sanitizeForFirestore(c)));
 
-    // 4. Demo Transactions
-    const demoTransactions: Transaction[] = [
-      {
-        id: "TX-DEMO-1",
-        timestamp: now - 86400000,
-        totalAmount: 35000,
-        paymentMethod: "cash",
-        cashPaid: 50000,
-        change: 15000,
-        customerId: "C-DEMO-2",
-        customerName: "Pak RT",
-        items: [{ productId: "P-DEMO-1", productName: "Indomie Goreng Original", unitName: "Bks", price: 3500, buyPrice: 2800, quantity: 10, conversion: 1 }],
-      },
-      {
-        id: "TX-DEMO-2",
-        timestamp: now - 3600000,
-        totalAmount: 75000,
-        paymentMethod: "debt",
-        cashPaid: 0,
-        change: 0,
-        customerId: "C-DEMO-1",
-        customerName: "Ibu Budi (Tetangga)",
-        items: [{ productId: "P-DEMO-2", productName: "Beras Rojo Lele 1L", unitName: "Liter", price: 12500, buyPrice: 10500, quantity: 6, conversion: 1 }],
-      },
-    ];
-    for (const t of demoTransactions) {
-      const txs = this.getTransactions();
-      txs.unshift(t);
-      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
-      await setDoc(doc(db_fs, `warungs/${wid}/transactions`, t.id), this.sanitizeForFirestore(t));
+    try {
+      await batch.commit();
+      this.notifyAll();
+    } catch (error) {
+      console.error("Gagal injeksi data demo:", error);
+      throw error;
     }
-
-    window.dispatchEvent(new Event("products-updated"));
-    window.dispatchEvent(new Event("customers-updated"));
-    window.dispatchEvent(new Event("transactions-updated"));
   }
 
-  // --- CUSTOMERS & DEBT ---
+  private notifyAll() {
+    const events = ["products-updated", "customers-updated", "transactions-updated", "suppliers-updated", "debt-payments-updated"];
+    events.forEach((e) => window.dispatchEvent(new Event(e)));
+  }
+
   getCustomers(): Customer[] {
     const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     return data ? JSON.parse(data) : [];
@@ -268,9 +229,7 @@ class DBService {
     if (index >= 0) customers[index] = c;
     else customers.push(c);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    if (this.profile?.warungId) {
-      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/customers`, c.id), this.sanitizeForFirestore(c));
-    }
+    if (this.profile?.warungId) await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/customers`, c.id), this.sanitizeForFirestore(c));
     window.dispatchEvent(new Event("customers-updated"));
   }
 
@@ -283,21 +242,15 @@ class DBService {
     const payments = this.getDebtPayments();
     payments.unshift(payment);
     localStorage.setItem(STORAGE_KEYS.DEBT_PAYMENTS, JSON.stringify(payments));
-
-    // Update Saldo Hutang Pelanggan
     const customers = this.getCustomers();
     const custIdx = customers.findIndex((c) => c.id === payment.customerId);
     if (custIdx >= 0) {
       customers[custIdx].debtBalance -= payment.amount;
       await this.saveCustomer(customers[custIdx]);
     }
-
-    if (this.profile?.warungId) {
-      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/debt_payments`, payment.id), this.sanitizeForFirestore(payment));
-    }
+    if (this.profile?.warungId) await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/debt_payments`, payment.id), this.sanitizeForFirestore(payment));
   }
 
-  // --- TRANSACTIONS ---
   getTransactions(): Transaction[] {
     const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
     return data ? JSON.parse(data) : [];
@@ -307,8 +260,6 @@ class DBService {
     const transactions = this.getTransactions();
     transactions.unshift(transaction);
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-
-    // 1. Kurangi Stok
     const products = this.getProducts();
     transaction.items.forEach((item) => {
       const productIndex = products.findIndex((p) => p.id === item.productId);
@@ -317,8 +268,6 @@ class DBService {
         this.saveProduct(products[productIndex]);
       }
     });
-
-    // 2. Jika Hutang, Tambah Saldo Hutang Pelanggan
     if (transaction.paymentMethod === "debt" && transaction.customerId) {
       const customers = this.getCustomers();
       const custIdx = customers.findIndex((c) => c.id === transaction.customerId);
@@ -328,7 +277,6 @@ class DBService {
         await this.saveCustomer(customers[custIdx]);
       }
     } else if (transaction.customerId) {
-      // Jika bayar langsung, tetap update total belanja pelanggan
       const customers = this.getCustomers();
       const custIdx = customers.findIndex((c) => c.id === transaction.customerId);
       if (custIdx >= 0) {
@@ -336,13 +284,9 @@ class DBService {
         await this.saveCustomer(customers[custIdx]);
       }
     }
-
-    if (this.profile?.warungId) {
-      await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/transactions`, transaction.id), this.sanitizeForFirestore(transaction));
-    }
+    if (this.profile?.warungId) await setDoc(doc(db_fs, `warungs/${this.profile.warungId}/transactions`, transaction.id), this.sanitizeForFirestore(transaction));
   }
 
-  // --- OTHER RE-USED METHODS ---
   getSuppliers(): Supplier[] {
     const data = localStorage.getItem(STORAGE_KEYS.SUPPLIERS);
     return data ? JSON.parse(data) : [];

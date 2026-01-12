@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../services/db";
 import { AppSettings, UserProfile } from "../types";
-import { Button, Input, Card, Modal, Toast, Badge } from "../components/UI";
+import { Button, Input, Card, Toast, Badge } from "../components/UI";
 import { printerService } from "../services/printer";
 
 const Settings: React.FC = () => {
@@ -101,23 +101,34 @@ const Settings: React.FC = () => {
   };
 
   const handleInjectDemo = async () => {
-    if (confirm("Gunakan Data Demo? Semua data transaksi/stok Anda saat ini akan dihapus dan diganti dengan data contoh.")) {
+    if (confirm("Gunakan Data Demo? Semua data transaksi/stok Anda saat ini akan dihapus.")) {
       setIsMaintenanceMode(true);
-      await db.injectDemoData();
-      setIsMaintenanceMode(false);
-      alert("Data demo berhasil dimuat!");
-      window.location.hash = "#/";
+      try {
+        await db.injectDemoData();
+        alert("Data demo berhasil dimuat!");
+        window.location.hash = "#/";
+      } catch (err: any) {
+        console.error(err);
+        alert("Gagal memuat data: " + (err.message || "Cek koneksi atau izin Firebase."));
+      } finally {
+        setIsMaintenanceMode(false);
+      }
     }
   };
 
   const handleResetApp = async () => {
-    const confirmation = prompt("PERINGATAN: Ini akan menghapus seluruh data Transaksi, Produk, dan Pelanggan selamanya. Ketik 'KONFIRMASI' untuk melanjutkan.");
+    const confirmation = prompt("Ketik 'KONFIRMASI' untuk reset data.");
     if (confirmation === "KONFIRMASI") {
       setIsMaintenanceMode(true);
-      await db.wipeAllData();
-      setIsMaintenanceMode(false);
-      alert("Aplikasi telah direset ke kondisi awal.");
-      window.location.hash = "#/";
+      try {
+        await db.wipeAllData();
+        alert("Reset berhasil.");
+        window.location.hash = "#/";
+      } catch (err: any) {
+        alert("Gagal reset: " + err.message);
+      } finally {
+        setIsMaintenanceMode(false);
+      }
     }
   };
 
@@ -230,8 +241,8 @@ const Settings: React.FC = () => {
       </div>
 
       {isMaintenanceMode && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6">
-          <Card className="p-8 max-w-sm w-full text-center space-y-4">
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6 text-center">
+          <Card className="p-8 max-w-sm w-full space-y-4">
             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <h3 className="font-bold">Memproses Data...</h3>
             <p className="text-xs text-slate-500 italic">Mohon tunggu sebentar, kami sedang mengatur ulang database Anda.</p>
