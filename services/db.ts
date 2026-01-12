@@ -212,6 +212,20 @@ class DBService {
     }
   }
 
+  async saveProductsBulk(newProducts: Product[]): Promise<void> {
+    if (!this.activeWarungId) return;
+    const batch = writeBatch(db_fs);
+    const existingProducts = this.getProducts();
+
+    newProducts.forEach((p) => {
+      const ref = doc(db_fs, `warungs/${this.activeWarungId}/products`, p.id);
+      batch.set(ref, this.sanitizeForFirestore(p));
+    });
+
+    await batch.commit();
+    // Update local storage will happen via onSnapshot
+  }
+
   async deleteProduct(id: string): Promise<void> {
     if (!this.activeWarungId) return;
     const products = this.getProducts().filter((p) => p.id !== id);
