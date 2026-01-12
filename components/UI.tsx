@@ -42,27 +42,24 @@ export const Button: React.FC<ButtonProps> = ({
 };
 
 // --- Input ---
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+// FIX: Use Omit to avoid conflict with standard 'prefix' property which expects a string
+interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   label?: string;
   error?: string;
-  prefix?: string;
+  prefix?: React.ReactNode;
 }
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ label, error, prefix, className = '', ...props }, ref) => (
   <div className="w-full">
     {label && <label className="block text-xs font-semibold text-gray-500 mb-1">{label}</label>}
     <div className="relative">
       {prefix && (
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm flex items-center justify-center w-5">
-          {prefix.startsWith('fa-') ? (
-            <i className={`fa-solid ${prefix}`}></i>
-          ) : (
-            <span className="font-medium">{prefix}</span>
-          )}
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
+          {prefix}
         </div>
       )}
       <input
         ref={ref}
-        className={`w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all ${prefix ? 'pl-10' : ''} ${error ? 'border-red-300' : ''} ${className}`}
+        className={`w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all ${prefix ? 'pl-9' : ''} ${error ? 'border-red-300' : ''} ${className}`}
         {...props}
       />
     </div>

@@ -1,5 +1,5 @@
 {
-  "name": "Copy of database aplikasi",
+  "name": "database aplikasi baru",
   "description": "A modern, offline-ready Point of Sale (POS) application designed for small convenience stores (Warung). Features inventory management, multi-unit pricing, and sales reporting.",
   "requestFramePermissions": [
     "bluetooth",

@@ -1,307 +1,271 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { auth, db_fs } from '../services/firebase';
+import { db } from '../services/db';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  updateProfile,
+  signInWithPopup, 
   GoogleAuthProvider,
-  signInWithPopup,
-  sendPasswordResetEmail
+  updateProfile,
+  deleteUser
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { Button, Input, Card, Modal } from '../components/UI';
-import { UserProfile, Warung } from '../types';
+import { doc, getDoc } from 'firebase/firestore';
+import { Button, Input, Card } from '../components/UI';
+import { UserProfile, UserRole } from '../types';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [storeName, setStoreName] = useState(''); 
-  const [joinWarungId, setJoinWarungId] = useState('');
+  const [warungIdInput, setWarungIdInput] = useState('');
+  const [role, setRole] = useState<UserRole>('owner');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  
-  // Forgot Password State
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
 
-  useEffect(() => {
-    const checkAuthStatus = async () => {
-      if (auth.currentUser) {
-        setLoading(true);
-        try {
-          const userSnap = await getDoc(doc(db_fs, 'users', auth.currentUser.uid));
-          if (!userSnap.exists()) {
-            setIsRegistering(true);
-            setDisplayName(auth.currentUser.displayName || '');
-          }
-        } catch (e: any) {
-          console.warn("Menunggu sinkronisasi Firestore...");
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-    checkAuthStatus();
-  }, []);
+  const generateUniqueWarungId = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = 'W-';
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setSuccessMsg('');
     
+    let createdUser: any = null;
+
     try {
       if (isRegistering) {
-        await processRegistration(email, password, displayName);
+        // 1. Buat akun Auth
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        createdUser = userCredential.user;
+        
+        await updateProfile(createdUser, { displayName });
+        
+        let targetWarungId = '';
+
+        if (role === 'staff') {
+            const inputId = warungIdInput.trim().toUpperCase();
+            if (!inputId) throw new Error("WARUNG_ID_REQUIRED");
+            
+            // 2. Cek keberadaan Warung ID
+            // Jika ini error permission-denied, artinya Rules Firestore belum di-update
+            try {
+                const warungDoc = await getDoc(doc(db_fs, 'warungs', inputId));
+                if (!warungDoc.exists()) {
+                    throw new Error("WARUNG_ID_INVALID");
+                }
+                targetWarungId = inputId;
+            } catch (fsErr: any) {
+                if (fsErr.code === 'permission-denied') {
+                    throw new Error("PERMISSION_DENIED_FS");
+                }
+                throw fsErr;
+            }
+        } else {
+            targetWarungId = generateUniqueWarungId();
+        }
+
+        // 3. Simpan Profil
+        const profile: UserProfile = {
+            uid: createdUser.uid,
+            email: email,
+            displayName: displayName,
+            role: role,
+            warungId: targetWarungId
+        };
+        
+        await db.saveUserProfile(profile);
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
-      handleAuthError(err);
+      console.error("Auth Error Detail:", err);
+      
+      // Bersihkan user jika pendaftaran gagal di tengah (opsional, tapi bagus untuk UX)
+      // if (createdUser && isRegistering) await deleteUser(createdUser).catch(() => {});
+
+      if (err.message === "WARUNG_ID_REQUIRED") {
+          setError("Silakan masukkan Warung ID dari Pemilik.");
+      } else if (err.message === "WARUNG_ID_INVALID") {
+          setError("Warung ID tidak ditemukan. Periksa kembali kodenya.");
+      } else if (err.message === "PERMISSION_DENIED_FS") {
+          setError("Izin akses ditolak. Pemilik harus mengatur Rules di Firebase Console.");
+      } else {
+          switch (err.code) {
+            case 'auth/invalid-credential':
+              setError('Email atau password salah.');
+              break;
+            case 'auth/email-already-in-use':
+              setError('Email sudah terdaftar. Silakan login atau gunakan email lain.');
+              break;
+            case 'auth/weak-password':
+              setError('Password terlalu lemah (min. 6 karakter).');
+              break;
+            case 'permission-denied':
+              setError('Gagal menulis data ke database (Permission Denied).');
+              break;
+            default:
+              setError('Terjadi kesalahan. Pastikan koneksi stabil.');
+          }
+      }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!resetEmail) {
-      setError("Masukkan email Anda terlebih dahulu.");
-      return;
-    }
-    setResetLoading(true);
-    setError('');
-    try {
-      await sendPasswordResetEmail(auth, resetEmail);
-      setSuccessMsg("Link reset password telah dikirim ke email Anda. Silakan cek Inbox atau Spam.");
-      setShowForgotModal(false);
-    } catch (err: any) {
-      handleAuthError(err);
-    } finally {
-      setResetLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
     const provider = new GoogleAuthProvider();
+    setError('');
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const userSnap = await getDoc(doc(db_fs, 'users', user.uid));
-      if (!userSnap.exists()) {
-        setIsRegistering(true);
-        setDisplayName(user.displayName || '');
+      const userDoc = await getDoc(doc(db_fs, 'users', result.user.uid));
+      
+      if (!userDoc.exists()) {
+          const profile: UserProfile = {
+              uid: result.user.uid,
+              email: result.user.email || '',
+              displayName: result.user.displayName || 'User',
+              role: 'owner',
+              warungId: generateUniqueWarungId()
+          };
+          await db.saveUserProfile(profile);
+      } else {
+          const profileData = userDoc.data() as UserProfile;
+          localStorage.setItem('warung_user_profile', JSON.stringify(profileData));
+          window.dispatchEvent(new Event('profile-updated'));
       }
     } catch (err: any) {
-      handleAuthError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const processRegistration = async (emailStr: string, passStr: string, nameStr: string) => {
-    if (isJoining && !joinWarungId) throw new Error("Warung ID wajib diisi.");
-    if (!isJoining && !storeName) throw new Error("Nama Warung wajib diisi.");
-    
-    let user = auth.currentUser;
-
-    if (!user) {
-      const userCredential = await createUserWithEmailAndPassword(auth, emailStr, passStr);
-      user = userCredential.user;
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    let finalWarungId = '';
-    let role: 'owner' | 'cashier' = 'owner';
-
-    if (isJoining) {
-      const cleanId = joinWarungId.trim().toUpperCase();
-      const warungRef = doc(db_fs, 'warungs', cleanId);
-      const warungSnap = await getDoc(warungRef);
-      
-      if (!warungSnap.exists()) {
-        throw new Error("Warung ID tidak ditemukan. Pastikan kodenya benar.");
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setError('Gagal login dengan Google.');
       }
-      finalWarungId = cleanId;
-      role = 'cashier';
-    } else {
-      finalWarungId = `WRG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
     }
-
-    const userProfile: UserProfile = {
-      uid: user.uid,
-      email: user.email!,
-      displayName: nameStr,
-      warungId: finalWarungId,
-      role: role,
-      active: true
-    };
-    
-    await setDoc(doc(db_fs, 'users', user.uid), userProfile);
-    
-    if (!isJoining) {
-      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-      const warungData: Warung = {
-        id: finalWarungId,
-        name: storeName,
-        ownerUid: user.uid,
-        status: 'active',
-        plan: 'free',
-        createdAt: Date.now(),
-        trialEndsAt: Date.now() + thirtyDays // Trial 30 Hari
-      };
-
-      await setDoc(doc(db_fs, 'warungs', finalWarungId), warungData);
-
-      await setDoc(doc(db_fs, `warungs/${finalWarungId}/config`, 'settings'), {
-        storeName: storeName,
-        storeAddress: 'Alamat belum diatur',
-        storePhone: '-',
-        enableTax: false,
-        taxRate: 11,
-        footerMessage: 'Terima kasih!',
-        showLogo: true,
-        tierDiscounts: { bronze: 0, silver: 2, gold: 5 }
-      });
-    }
-    
-    if (user.displayName !== nameStr) {
-      await updateProfile(user, { displayName: nameStr });
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    window.location.reload();
-  };
-
-  const handleAuthError = (err: any) => {
-    let msg = err.message || "Terjadi kesalahan.";
-    if (msg.includes("permission-denied")) {
-      msg = "Akses Ditolak! Mohon hubungi admin.";
-    } else if (msg.includes("auth/email-already-in-use")) {
-      msg = "Email sudah terdaftar. Silakan login.";
-    } else if (msg.includes("auth/user-not-found")) {
-      msg = "Email tidak terdaftar.";
-    } else if (msg.includes("auth/wrong-password")) {
-      msg = "Password salah.";
-    } else if (msg.includes("auth/invalid-email")) {
-      msg = "Format email tidak valid.";
-    }
-    setError(msg);
-    setSuccessMsg('');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
-      <Card className="w-full max-w-md p-8 shadow-2xl border-slate-800">
-        <div className="text-center mb-8">
+    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 relative overflow-hidden">
+      <div className="absolute top-0 -left-20 w-72 h-72 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
+      <div className="absolute bottom-0 -right-20 w-72 h-72 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+
+      <Card className="w-full max-w-md p-8 shadow-2xl relative z-10 border-slate-800">
+        <div className="text-center mb-6">
           <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/50">
             <i className="fa-solid fa-cash-register text-2xl text-white"></i>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Beris POS</h1>
-          <p className="text-slate-500 text-sm mt-1">
-            {isRegistering ? 'Daftar Warung Baru (Trial 30 Hari)' : 'Masuk ke Dashboard'}
+          <h1 className="text-2xl font-bold text-slate-900">Warung POS Pro</h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            {isRegistering ? 'Buat akun pengelola toko' : 'Masuk untuk kelola warung Anda'}
           </p>
         </div>
 
         <form onSubmit={handleAuth} className="space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-[11px] rounded-lg flex items-start gap-2 font-bold animate-pulse">
-              <i className="fa-solid fa-circle-exclamation mt-1"></i>
-              <span>{error}</span>
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-[11px] rounded-lg flex items-start gap-2 font-bold">
-              <i className="fa-solid fa-circle-check mt-1"></i>
-              <span>{successMsg}</span>
+            <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-[11px] rounded-lg flex items-center gap-2">
+              <i className="fa-solid fa-circle-exclamation"></i>
+              {error}
             </div>
           )}
 
           {isRegistering && (
             <>
-              <div className="flex bg-slate-100 p-1 rounded-xl mb-2">
-                <button type="button" onClick={() => setIsJoining(false)} className={`flex-1 py-1 text-[10px] font-bold rounded-lg transition-all ${!isJoining ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>Buat Warung</button>
-                <button type="button" onClick={() => setIsJoining(true)} className={`flex-1 py-1 text-[10px] font-bold rounded-lg transition-all ${isJoining ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>Gabung Warung</button>
+              <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
+                 <button 
+                   type="button" 
+                   onClick={() => setRole('owner')}
+                   className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === 'owner' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                 >
+                    PEMILIK
+                 </button>
+                 <button 
+                   type="button" 
+                   onClick={() => setRole('staff')}
+                   className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${role === 'staff' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                 >
+                    KASIR
+                 </button>
               </div>
-              <Input label="Nama Lengkap" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-              {isJoining ? (
-                <Input label="Warung ID" value={joinWarungId} onChange={(e) => setJoinWarungId(e.target.value.toUpperCase())} placeholder="WRG-XXXXXX" required />
-              ) : (
-                <Input label="Nama Warung" value={storeName} onChange={(e) => setStoreName(e.target.value)} required />
+
+              <Input
+                label="Nama Lengkap"
+                placeholder="Nama Anda"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                required
+              />
+
+              {role === 'staff' && (
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-2">
+                  <Input
+                    label="Warung ID (Dari Pemilik)"
+                    placeholder="W-XXXXXX"
+                    value={warungIdInput}
+                    onChange={(e) => setWarungIdInput(e.target.value)}
+                    required
+                  />
+                  <p className="text-[10px] text-amber-700 mt-1">Minta Pemilik memberikan Warung ID dari menu Pengaturan.</p>
+                </div>
               )}
             </>
           )}
 
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <div className="relative">
-             <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required={!isRegistering} />
-             {!isRegistering && (
-                <button 
-                  type="button" 
-                  onClick={() => { setResetEmail(email); setShowForgotModal(true); }}
-                  className="absolute right-0 top-0 text-[10px] text-blue-600 font-bold hover:underline"
-                >
-                  Lupa Password?
-                </button>
-             )}
-          </div>
+          <Input
+            label="Email"
+            type="email"
+            placeholder="email@contoh.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
 
-          <Button type="submit" className="w-full py-3 font-bold" disabled={loading}>
-            {loading ? <i className="fa-solid fa-circle-notch fa-spin mr-2"></i> : (isRegistering ? 'Mulai Percobaan Gratis' : 'Masuk')}
+          <Input
+            label="Password"
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+
+          <Button type="submit" className="w-full py-2.5 font-bold" disabled={loading}>
+            {loading ? <i className="fa-solid fa-circle-notch fa-spin mr-2"></i> : null}
+            {isRegistering ? 'Daftar Sekarang' : 'Masuk'}
           </Button>
 
-          {!isRegistering && (
-            <button type="button" onClick={handleGoogleLogin} className="w-full flex items-center justify-center gap-3 py-2.5 bg-white border rounded-xl hover:bg-slate-50 font-bold text-sm">
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="G" />
-              Masuk dengan Google
+          <div className="text-center mt-4">
+            <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-blue-600 hover:underline font-medium">
+              {isRegistering ? 'Sudah punya akun? Login' : 'Belum punya akun? Daftar'}
             </button>
-          )}
-
-          <div className="text-center mt-4 border-t pt-4">
-             <button type="button" onClick={() => { setIsRegistering(!isRegistering); setIsJoining(false); setError(''); setSuccessMsg(''); }} className="text-xs text-blue-600 font-bold">
-               {isRegistering ? 'Sudah punya akun? Masuk' : 'Belum punya akun? Daftar Trial'}
-             </button>
           </div>
+
+          {!isRegistering && (
+            <>
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-200"></span></div>
+                <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400">Atau</span></div>
+              </div>
+
+              <button 
+                type="button" 
+                onClick={handleGoogleLogin} 
+                className="w-full flex items-center justify-center gap-3 py-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-slate-700 text-sm font-medium active:scale-[0.98]"
+              >
+                <img 
+                  src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" 
+                  alt="Google Logo" 
+                  className="w-5 h-5 object-contain" 
+                />
+                Masuk dengan Google
+              </button>
+            </>
+          )}
         </form>
       </Card>
-
-      {/* Forgot Password Modal */}
-      <Modal 
-        isOpen={showForgotModal} 
-        onClose={() => setShowForgotModal(false)} 
-        title="Pemulihan Password"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowForgotModal(false)}>Batal</Button>
-            <Button onClick={handleForgotPassword} disabled={resetLoading}>
-              {resetLoading ? 'Mengirim...' : 'Kirim Link Reset'}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-           <p className="text-sm text-gray-600">
-             Kami akan mengirimkan instruksi perubahan password ke email Anda.
-           </p>
-           <Input 
-             label="Alamat Email" 
-             type="email" 
-             value={resetEmail} 
-             onChange={(e) => setResetEmail(e.target.value)} 
-             placeholder="nama@email.com"
-           />
-        </div>
-      </Modal>
     </div>
   );
 };
