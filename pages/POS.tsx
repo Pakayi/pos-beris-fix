@@ -9,6 +9,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from "https://esm.sh/html5-q
 const POS: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("Semua");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [amountPaid, setAmountPaid] = useState<string>("");
@@ -163,6 +164,12 @@ const POS: React.FC = () => {
     return { subtotal, discountAmount, discountRate, taxAmount, total };
   }, [cart, settings, selectedCustomer]);
 
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    products.forEach((p) => cats.add(p.category || "Umum"));
+    return ["Semua", ...Array.from(cats)];
+  }, [products]);
+
   const change = (parseInt(amountPaid) || 0) - calculations.total;
 
   const handleCheckout = async () => {
@@ -227,7 +234,12 @@ const POS: React.FC = () => {
     }
   };
 
-  const filteredProducts = products.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.includes(search));
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.includes(search);
+    const matchesCategory = selectedCategory === "Semua" || (p.category || "Umum") === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
   const filteredCustomers = allCustomers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || c.phone.includes(customerSearch));
   const qrisUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PRO_WARUNG_POS_${calculations.total}`;
 
@@ -243,12 +255,28 @@ const POS: React.FC = () => {
             Scan
           </Button>
         </div>
+
+        {/* Category Bar */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                selectedCategory === cat ? "bg-blue-600 text-white border-blue-600 shadow-md" : "bg-white text-slate-500 border-gray-200 hover:border-blue-300"
+              }`}
+            >
+              {cat.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 overflow-y-auto pr-2">
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {filteredProducts.map((product) => (
               <div key={product.id} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow h-full flex flex-col justify-between">
                 <div>
-                  <span className="text-[9px] font-black text-blue-500 uppercase">{product.category}</span>
+                  <span className="text-[9px] font-black text-blue-500 uppercase">{product.category || "Umum"}</span>
                   <h3 className="font-bold text-gray-800 text-sm leading-tight mb-2">{product.name}</h3>
                 </div>
                 <div className="space-y-1">
@@ -261,6 +289,7 @@ const POS: React.FC = () => {
                 </div>
               </div>
             ))}
+            {filteredProducts.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 italic text-sm">Produk tidak ditemukan</div>}
           </div>
         </div>
       </div>

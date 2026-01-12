@@ -1,6 +1,6 @@
 import { Product, Transaction, AppSettings, Customer, UserProfile, Supplier, Procurement, DebtPayment } from "../types";
 import { db_fs, auth } from "./firebase";
-import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, query, orderBy } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, onSnapshot, deleteDoc, query, orderBy, writeBatch, getDocs } from "firebase/firestore";
 
 const STORAGE_KEYS = {
   PRODUCTS: "warung_products",
@@ -92,9 +92,167 @@ class DBService {
             localStorage.setItem(STORAGE_KEYS.DEBT_PAYMENTS, JSON.stringify(payments));
             window.dispatchEvent(new Event("debt-payments-updated"));
           });
+
+          onSnapshot(collection(db_fs, `warungs/${warungId}/transactions`), (snapshot) => {
+            const txs: Transaction[] = [];
+            snapshot.forEach((doc) => txs.push(doc.data() as Transaction));
+            localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
+            window.dispatchEvent(new Event("transactions-updated"));
+          });
         }
       }
     });
+  }
+
+  // --- MAINTENANCE & DEMO ---
+  async wipeAllData(): Promise<void> {
+    if (!this.profile?.warungId) return;
+    const wid = this.profile.warungId;
+
+    // Clear LocalStorage
+    localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
+    localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
+    localStorage.removeItem(STORAGE_KEYS.CUSTOMERS);
+    localStorage.removeItem(STORAGE_KEYS.SUPPLIERS);
+    localStorage.removeItem(STORAGE_KEYS.PROCUREMENT);
+    localStorage.removeItem(STORAGE_KEYS.DEBT_PAYMENTS);
+
+    // Clear Cloud collections (Iterative delete)
+    const collections = ["products", "transactions", "customers", "suppliers", "procurements", "debt_payments"];
+    for (const colName of collections) {
+      const colRef = collection(db_fs, `warungs/${wid}/${colName}`);
+      const snapshot = await getDocs(colRef);
+      const batch = writeBatch(db_fs);
+      snapshot.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+
+    window.dispatchEvent(new Event("products-updated"));
+    window.dispatchEvent(new Event("customers-updated"));
+    window.dispatchEvent(new Event("debt-payments-updated"));
+    window.dispatchEvent(new Event("transactions-updated"));
+  }
+
+  async injectDemoData(): Promise<void> {
+    if (!this.profile?.warungId) return;
+    await this.wipeAllData();
+
+    const wid = this.profile.warungId;
+    const now = Date.now();
+
+    // 1. Demo Suppliers
+    const demoSuppliers: Supplier[] = [
+      { id: "S-DEMO-1", name: "PT Sembako Makmur", contact: "081122334455", address: "Pasar Induk Kramat Jati", description: "Supplier beras dan minyak" },
+      { id: "S-DEMO-2", name: "Distributor Mie Jaya", contact: "085566778899", address: "Kawasan Industri Jababeka", description: "Spesialis mie instan" },
+    ];
+    for (const s of demoSuppliers) await this.saveSupplier(s);
+
+    // 2. Demo Products (Multi Unit)
+    const demoProducts: Product[] = [
+      {
+        id: "P-DEMO-1",
+        name: "Indomie Goreng Original",
+        sku: "071295057937",
+        category: "Mie Instan",
+        baseUnit: "Bks",
+        stock: 120,
+        minStockAlert: 20,
+        updatedAt: now,
+        supplierId: "S-DEMO-2",
+        units: [
+          { name: "Bks", conversion: 1, price: 3500, buyPrice: 2800 },
+          { name: "Dus", conversion: 40, price: 130000, buyPrice: 110000 },
+        ],
+      },
+      {
+        id: "P-DEMO-2",
+        name: "Beras Rojo Lele 1L",
+        sku: "BRS-001",
+        category: "Sembako",
+        baseUnit: "Liter",
+        stock: 50,
+        minStockAlert: 10,
+        updatedAt: now,
+        supplierId: "S-DEMO-1",
+        units: [
+          { name: "Liter", conversion: 1, price: 12500, buyPrice: 10500 },
+          { name: "Karung", conversion: 25, price: 295000, buyPrice: 260000 },
+        ],
+      },
+      {
+        id: "P-DEMO-3",
+        name: "Telur Ayam Ras",
+        sku: "TLR-001",
+        category: "Sembako",
+        baseUnit: "Butir",
+        stock: 300,
+        minStockAlert: 50,
+        updatedAt: now,
+        supplierId: "S-DEMO-1",
+        units: [
+          { name: "Butir", conversion: 1, price: 2000, buyPrice: 1600 },
+          { name: "Peti", conversion: 150, price: 285000, buyPrice: 240000 },
+        ],
+      },
+      {
+        id: "P-DEMO-4",
+        name: "Le Minerale 600ml",
+        sku: "LM-600",
+        category: "Minuman",
+        baseUnit: "Botol",
+        stock: 24,
+        minStockAlert: 12,
+        updatedAt: now,
+        units: [
+          { name: "Botol", conversion: 1, price: 4000, buyPrice: 3000 },
+          { name: "Karton", conversion: 24, price: 85000, buyPrice: 70000 },
+        ],
+      },
+    ];
+    for (const p of demoProducts) await this.saveProduct(p);
+
+    // 3. Demo Customers
+    const demoCustomers: Customer[] = [
+      { id: "C-DEMO-1", name: "Ibu Budi (Tetangga)", phone: "081234567890", tier: "Gold", totalSpent: 1500000, debtBalance: 75000, joinedAt: now - 86400000 * 30 },
+      { id: "C-DEMO-2", name: "Pak RT", phone: "089988776655", tier: "Silver", totalSpent: 500000, debtBalance: 0, joinedAt: now - 86400000 * 15 },
+    ];
+    for (const c of demoCustomers) await this.saveCustomer(c);
+
+    // 4. Demo Transactions
+    const demoTransactions: Transaction[] = [
+      {
+        id: "TX-DEMO-1",
+        timestamp: now - 86400000,
+        totalAmount: 35000,
+        paymentMethod: "cash",
+        cashPaid: 50000,
+        change: 15000,
+        customerId: "C-DEMO-2",
+        customerName: "Pak RT",
+        items: [{ productId: "P-DEMO-1", productName: "Indomie Goreng Original", unitName: "Bks", price: 3500, buyPrice: 2800, quantity: 10, conversion: 1 }],
+      },
+      {
+        id: "TX-DEMO-2",
+        timestamp: now - 3600000,
+        totalAmount: 75000,
+        paymentMethod: "debt",
+        cashPaid: 0,
+        change: 0,
+        customerId: "C-DEMO-1",
+        customerName: "Ibu Budi (Tetangga)",
+        items: [{ productId: "P-DEMO-2", productName: "Beras Rojo Lele 1L", unitName: "Liter", price: 12500, buyPrice: 10500, quantity: 6, conversion: 1 }],
+      },
+    ];
+    for (const t of demoTransactions) {
+      const txs = this.getTransactions();
+      txs.unshift(t);
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
+      await setDoc(doc(db_fs, `warungs/${wid}/transactions`, t.id), this.sanitizeForFirestore(t));
+    }
+
+    window.dispatchEvent(new Event("products-updated"));
+    window.dispatchEvent(new Event("customers-updated"));
+    window.dispatchEvent(new Event("transactions-updated"));
   }
 
   // --- CUSTOMERS & DEBT ---
@@ -259,7 +417,7 @@ class DBService {
     const customers = this.getCustomers().filter((c) => c.id !== id);
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
     if (this.profile?.warungId) await deleteDoc(doc(db_fs, `warungs/${this.profile.warungId}/customers`, id));
-    window.dispatchEvent(new Event("customers-updated"));
+    window.dispatchEvent(new Event("updated-customers"));
   }
   getSettings(): AppSettings {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
