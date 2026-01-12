@@ -1,3 +1,4 @@
+
 export interface ProductUnit {
   name: string;
   conversion: number;
@@ -28,13 +29,13 @@ export interface Supplier {
   updatedAt: number;
 }
 
-export type StockLogType = "SALE" | "RESTOCK" | "ADJUSTMENT" | "INITIAL";
+export type StockLogType = 'SALE' | 'RESTOCK' | 'ADJUSTMENT' | 'INITIAL';
 
 export interface StockLog {
   id: string;
   productId: string;
   productName: string;
-  type: "IN" | "OUT";
+  type: 'IN' | 'OUT';
   logType: StockLogType;
   quantity: number;
   unitName: string;
@@ -45,7 +46,7 @@ export interface StockLog {
   timestamp: number;
 }
 
-export type CustomerTier = "Bronze" | "Silver" | "Gold";
+export type CustomerTier = 'Bronze' | 'Silver' | 'Gold';
 
 export interface Customer {
   id: string;
@@ -71,7 +72,7 @@ export interface Transaction {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  paymentMethod: "cash" | "qris";
+  paymentMethod: 'cash' | 'qris';
   cashPaid: number;
   change: number;
   note?: string;
@@ -98,7 +99,7 @@ export interface AppSettings {
   };
 }
 
-export type UserRole = "owner" | "cashier" | "admin";
+export type UserRole = 'owner' | 'cashier' | 'admin';
 
 export interface UserProfile {
   uid: string;
@@ -113,19 +114,19 @@ export interface Warung {
   id: string;
   name: string;
   ownerUid: string;
-  status: "active" | "suspended";
-  plan: "free" | "pro";
+  status: 'active' | 'suspended';
+  plan: 'free' | 'pro';
   createdAt: number;
-  trialEndsAt?: number;
+  trialEndsAt?: number; 
 }
 
 export enum AppRoute {
-  DASHBOARD = "dashboard",
-  POS = "pos",
-  PRODUCTS = "products",
-  CUSTOMERS = "customers",
-  SUPPLIERS = "suppliers",
-  INVENTORY = "inventory",
-  REPORTS = "reports",
-  SETTINGS = "settings",
+  DASHBOARD = 'dashboard',
+  POS = 'pos',
+  PRODUCTS = 'products',
+  CUSTOMERS = 'customers',
+  SUPPLIERS = 'suppliers',
+  INVENTORY = 'inventory',
+  REPORTS = 'reports',
+  SETTINGS = 'settings'
 }

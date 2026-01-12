@@ -14,7 +14,6 @@ root.render(
   </React.StrictMode>
 );
 
-// REGISTER SERVICE WORKER FOR OFFLINE CAPABILITIES
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
