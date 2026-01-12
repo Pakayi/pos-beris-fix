@@ -15,7 +15,7 @@ export interface Product {
   minStockAlert: number;
   units: ProductUnit[];
   updatedAt: number;
-  supplierId?: string; // Link ke supplier
+  supplierId?: string;
 }
 
 export interface Supplier {
@@ -53,7 +53,17 @@ export interface Customer {
   phone: string;
   tier: CustomerTier;
   totalSpent: number;
+  debtBalance: number; // Saldo hutang saat ini
   joinedAt: number;
+}
+
+export interface DebtPayment {
+  id: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  timestamp: number;
+  note?: string;
 }
 
 export interface CartItem {
@@ -71,7 +81,7 @@ export interface Transaction {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  paymentMethod: "cash" | "qris";
+  paymentMethod: "cash" | "qris" | "debt"; // Tambah metode debt
   cashPaid: number;
   change: number;
   note?: string;
@@ -117,4 +127,5 @@ export enum AppRoute {
   SETTINGS = "settings",
   SUPPLIERS = "suppliers",
   PROCUREMENT = "procurement",
+  DEBT_BOOK = "debt-book",
 }

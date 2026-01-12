@@ -8,6 +8,7 @@ import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
 import Suppliers from "./pages/Suppliers";
 import Procurement from "./pages/Procurement";
+import DebtBook from "./pages/DebtBook"; // Baru
 import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
@@ -19,6 +20,7 @@ import { UserProfile } from "./types";
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "fa-gauge-high", roles: ["owner", "staff"] },
   { path: "/pos", label: "Kasir (POS)", icon: "fa-cash-register", roles: ["owner", "staff"] },
+  { path: "/debt-book", label: "Buku Hutang", icon: "fa-book", roles: ["owner", "staff"] }, // Baru
   { path: "/procurement", label: "Stok Masuk", icon: "fa-truck-loading", roles: ["owner"] },
   { path: "/products", label: "Produk", icon: "fa-box", roles: ["owner"] },
   { path: "/suppliers", label: "Supplier", icon: "fa-building-user", roles: ["owner"] },
@@ -56,7 +58,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white font-medium animate-pulse">Memuat Warung POS...</p>
+          <p className="text-white font-medium animate-pulse">Memuat Warung POS Pro...</p>
         </div>
       </div>
     );
@@ -125,7 +127,7 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-sm tracking-tight truncate">{appSettings.storeName || "Warung POS"}</span>
-              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-tighter">Role: {profile?.role || "Staff"}</span>
+              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-tighter">{profile?.role || "Staff"}</span>
             </div>
           </div>
           {!isMobile && (
@@ -179,6 +181,14 @@ const Layout: React.FC<{ user: User }> = ({ user }) => {
               element={
                 <PinGuard>
                   <POS />
+                </PinGuard>
+              }
+            />
+            <Route
+              path="/debt-book"
+              element={
+                <PinGuard>
+                  <DebtBook />
                 </PinGuard>
               }
             />
