@@ -1,4 +1,3 @@
-
 export interface ProductUnit {
   name: string;
   conversion: number;
@@ -16,9 +15,37 @@ export interface Product {
   minStockAlert: number;
   units: ProductUnit[];
   updatedAt: number;
+  supplierId?: string; // Link ke supplier
 }
 
-export type CustomerTier = 'Bronze' | 'Silver' | 'Gold';
+export interface Supplier {
+  id: string;
+  name: string;
+  contact: string;
+  address: string;
+  description: string;
+}
+
+export interface ProcurementItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitName: string;
+  buyPrice: number;
+  total: number;
+}
+
+export interface Procurement {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  timestamp: number;
+  items: ProcurementItem[];
+  totalAmount: number;
+  note?: string;
+}
+
+export type CustomerTier = "Bronze" | "Silver" | "Gold";
 
 export interface Customer {
   id: string;
@@ -44,7 +71,7 @@ export interface Transaction {
   timestamp: number;
   items: CartItem[];
   totalAmount: number;
-  paymentMethod: 'cash' | 'qris';
+  paymentMethod: "cash" | "qris";
   cashPaid: number;
   change: number;
   note?: string;
@@ -53,14 +80,14 @@ export interface Transaction {
   discountAmount?: number;
 }
 
-export type UserRole = 'owner' | 'staff';
+export type UserRole = "owner" | "staff";
 
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   role: UserRole;
-  warungId: string; // ID unik warung untuk sinkronisasi data antar owner & staff
+  warungId: string;
 }
 
 export interface AppSettings {
@@ -82,10 +109,12 @@ export interface AppSettings {
 }
 
 export enum AppRoute {
-  DASHBOARD = 'dashboard',
-  POS = 'pos',
-  PRODUCTS = 'products',
-  CUSTOMERS = 'customers',
-  REPORTS = 'reports',
-  SETTINGS = 'settings'
+  DASHBOARD = "dashboard",
+  POS = "pos",
+  PRODUCTS = "products",
+  CUSTOMERS = "customers",
+  REPORTS = "reports",
+  SETTINGS = "settings",
+  SUPPLIERS = "suppliers",
+  PROCUREMENT = "procurement",
 }
