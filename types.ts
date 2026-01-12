@@ -15,6 +15,34 @@ export interface Product {
   minStockAlert: number;
   units: ProductUnit[];
   updatedAt: number;
+  supplierId?: string; // Menghubungkan produk ke pemasok
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contactName: string;
+  phone: string;
+  address: string;
+  category: string;
+  updatedAt: number;
+}
+
+export type StockLogType = "SALE" | "RESTOCK" | "ADJUSTMENT" | "INITIAL";
+
+export interface StockLog {
+  id: string;
+  productId: string;
+  productName: string;
+  type: "IN" | "OUT";
+  logType: StockLogType;
+  quantity: number;
+  unitName: string;
+  previousStock: number;
+  currentStock: number;
+  reason: string;
+  operatorName: string;
+  timestamp: number;
 }
 
 export type CustomerTier = "Bronze" | "Silver" | "Gold";
@@ -52,16 +80,6 @@ export interface Transaction {
   discountAmount?: number;
 }
 
-export type UserRole = "owner" | "staff";
-
-export interface UserProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: UserRole;
-  warungId: string; // ID unik warung untuk sinkronisasi data antar owner & staff
-}
-
 export interface AppSettings {
   storeName: string;
   storeAddress: string;
@@ -80,11 +98,34 @@ export interface AppSettings {
   };
 }
 
+export type UserRole = "owner" | "cashier" | "admin";
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  warungId: string;
+  role: UserRole;
+  active: boolean;
+}
+
+export interface Warung {
+  id: string;
+  name: string;
+  ownerUid: string;
+  status: "active" | "suspended";
+  plan: "free" | "pro";
+  createdAt: number;
+  trialEndsAt?: number;
+}
+
 export enum AppRoute {
   DASHBOARD = "dashboard",
   POS = "pos",
   PRODUCTS = "products",
   CUSTOMERS = "customers",
+  SUPPLIERS = "suppliers",
+  INVENTORY = "inventory",
   REPORTS = "reports",
   SETTINGS = "settings",
 }
