@@ -50,6 +50,12 @@ const Settings: React.FC = () => {
     }
   };
 
+  const shareWarungId = () => {
+    if (!profile?.warungId) return;
+    const text = `Halo, silakan daftar sebagai Kasir di ${settings.storeName}.\n\nDownload/Buka aplikasi Warung POS, klik 'Daftar', pilih role 'KASIR' dan masukkan Warung ID ini:\n\n*${profile.warungId}*`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
+
   const handleGenerateNewWarungId = async () => {
     if (!profile || profile.role !== "owner") return;
     if (confirm("Ingin mengubah ID Warung menjadi format profesional?")) {
@@ -105,7 +111,6 @@ const Settings: React.FC = () => {
       setIsMaintenanceMode(true);
       try {
         await db.injectDemoData();
-        // Sembunyikan spinner DULU, baru keluarin alert.
         setIsMaintenanceMode(false);
         alert("Data demo berhasil dimuat!");
         window.location.hash = "#/";
@@ -151,6 +156,7 @@ const Settings: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-6">
+          {/* Section Warung ID & Manajemen Kasir */}
           <Card className="p-6 bg-slate-900 text-white border-none shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-sm uppercase tracking-widest text-blue-400">Warung ID</h3>
@@ -164,11 +170,15 @@ const Settings: React.FC = () => {
                 <i className={`fa-solid ${copiedId ? "fa-check" : "fa-copy"}`}></i>
               </Button>
             </div>
+            <Button onClick={shareWarungId} variant="primary" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white border-none text-xs py-2 font-bold mb-3" icon="fa-brands fa-whatsapp">
+              UNDANG KASIR (KIRIM ID)
+            </Button>
             {isOldIdFormat && profile?.role === "owner" && (
               <button onClick={handleGenerateNewWarungId} className="w-full py-2 bg-blue-600 text-white text-[10px] font-bold rounded-lg shadow-lg">
                 UBAH KE ID PROFESIONAL
               </button>
             )}
+            <p className="text-[10px] text-slate-400 italic text-center">Berikan ID ini kepada staff lu pas mereka daftar akun.</p>
           </Card>
 
           <Card className="p-6 space-y-4">

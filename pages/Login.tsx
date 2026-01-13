@@ -49,7 +49,6 @@ const Login: React.FC = () => {
           targetWarungId = inputId;
         } else {
           targetWarungId = generateUniqueWarungId();
-          // PERBAIKAN: Bikin dokumen fisik warung agar ownerId terdaftar di Firestore
           await setDoc(doc(db_fs, "warungs", targetWarungId), {
             ownerId: createdUser.uid,
             createdAt: Date.now(),
@@ -100,7 +99,6 @@ const Login: React.FC = () => {
 
       if (!userDoc.exists()) {
         const newWarungId = generateUniqueWarungId();
-        // PERBAIKAN: Buat rumah warung untuk user Google baru agar sinkron dengan Rules
         await setDoc(doc(db_fs, "warungs", newWarungId), {
           ownerId: result.user.uid,
           createdAt: Date.now(),
@@ -157,14 +155,15 @@ const Login: React.FC = () => {
                 </button>
               </div>
 
-              <Input label="Nama Lengkap" placeholder="Nama Anda" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-
               {role === "staff" && (
-                <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-2">
-                  <Input label="Warung ID (Dari Pemilik)" placeholder="W-XXXXXX" value={warungIdInput} onChange={(e) => setWarungIdInput(e.target.value)} required />
-                  <p className="text-[10px] text-amber-700 mt-1">Minta Pemilik memberikan Warung ID dari menu Pengaturan.</p>
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
+                  <p className="text-[10px] text-blue-700 font-bold uppercase mb-2">Pendaftaran Kasir</p>
+                  <Input label="Warung ID (Minta ke Owner)" placeholder="W-XXXXXX" value={warungIdInput} onChange={(e) => setWarungIdInput(e.target.value)} required />
+                  <p className="text-[10px] text-blue-600 mt-1 italic">Tanya Owner di menu Pengaturan untuk ID ini.</p>
                 </div>
               )}
+
+              <Input label="Nama Lengkap" placeholder="Nama Anda" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
             </>
           )}
 
@@ -179,7 +178,7 @@ const Login: React.FC = () => {
 
           <div className="text-center mt-4">
             <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-blue-600 hover:underline font-medium">
-              {isRegistering ? "Sudah punya akun? Login" : "Belum punya akun? Daftar"}
+              {isRegistering ? "Sudah punya akun? Login" : "Belum punya akun? Daftar Kasir/Owner"}
             </button>
           </div>
 
