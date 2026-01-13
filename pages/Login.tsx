@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { auth, db_fs } from "../services/firebase";
 import { db } from "../services/db";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, updateProfile } from "firebase/auth";
+// Fix: Use CDN for modular Firebase Auth functions
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "https://esm.sh/firebase@10.8.0/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { Button, Input, Card } from "../components/UI";
 import { UserProfile, UserRole } from "../types";
@@ -78,6 +79,15 @@ const Login: React.FC = () => {
           case "auth/weak-password":
             setError("Password minimal 6 karakter.");
             break;
+          case "auth/invalid-credential":
+            setError("Email atau password salah.");
+            break;
+          case "auth/user-not-found":
+            setError("Akun tidak ditemukan.");
+            break;
+          case "auth/wrong-password":
+            setError("Password salah.");
+            break;
           case "permission-denied":
             setError("Gagal menulis ke database. Cek Rules Firestore.");
             break;
@@ -90,40 +100,9 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    setError("");
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const userDoc = await getDoc(doc(db_fs, "users", result.user.uid));
-
-      if (!userDoc.exists()) {
-        const newWarungId = generateUniqueWarungId();
-        await setDoc(doc(db_fs, "warungs", newWarungId), {
-          ownerId: result.user.uid,
-          createdAt: Date.now(),
-        });
-
-        const profile: UserProfile = {
-          uid: result.user.uid,
-          email: result.user.email || "",
-          displayName: result.user.displayName || "User",
-          role: "owner",
-          warungId: newWarungId,
-        };
-        await db.saveUserProfile(profile);
-      } else {
-        const profileData = userDoc.data() as UserProfile;
-        localStorage.setItem("warung_user_profile", JSON.stringify(profileData));
-        window.dispatchEvent(new Event("profile-updated"));
-      }
-    } catch (err: any) {
-      if (err.code !== "auth/popup-closed-by-user") setError("Gagal login Google.");
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 relative overflow-hidden">
+      {/* Background Blobs */}
       <div className="absolute top-0 -left-20 w-72 h-72 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
       <div className="absolute bottom-0 -right-20 w-72 h-72 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
 
@@ -159,7 +138,7 @@ const Login: React.FC = () => {
                 <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
                   <p className="text-[10px] text-blue-700 font-bold uppercase mb-2">Pendaftaran Kasir</p>
                   <Input label="Warung ID (Minta ke Owner)" placeholder="W-XXXXXX" value={warungIdInput} onChange={(e) => setWarungIdInput(e.target.value)} required />
-                  <p className="text-[10px] text-blue-600 mt-1 italic">Tanya Owner di menu Pengaturan untuk ID ini.</p>
+                  <p className="text-[10px] text-blue-600 mt-1 italic">Minta ID ini ke Owner di menu Pengaturan.</p>
                 </div>
               )}
 
@@ -176,35 +155,15 @@ const Login: React.FC = () => {
             {isRegistering ? "Daftar Sekarang" : "Masuk"}
           </Button>
 
-          <div className="text-center mt-4">
+          <div className="text-center mt-4 border-t border-slate-100 pt-4">
             <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-blue-600 hover:underline font-medium">
-              {isRegistering ? "Sudah punya akun? Login" : "Belum punya akun? Daftar Kasir/Owner"}
+              {isRegistering ? "Sudah punya akun? Login di sini" : "Belum punya akun? Daftar sebagai Kasir/Owner"}
             </button>
           </div>
-
-          {!isRegistering && (
-            <>
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-slate-200"></span>
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase">
-                  <span className="bg-white px-2 text-slate-400">Atau</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                className="w-full flex items-center justify-center gap-3 py-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-slate-700 text-sm font-medium active:scale-[0.98]"
-              >
-                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" alt="Google Logo" className="w-5 h-5 object-contain" />
-                Masuk dengan Google
-              </button>
-            </>
-          )}
         </form>
       </Card>
+
+      <p className="absolute bottom-4 text-slate-500 text-[10px] font-medium tracking-widest uppercase">Warung POS Pro &copy; 2024</p>
     </div>
   );
 };

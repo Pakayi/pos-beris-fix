@@ -1,7 +1,6 @@
-
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeApp } from "https://esm.sh/firebase@10.8.0/app";
+import { getAuth } from "https://esm.sh/firebase@10.8.0/auth";
+import { getFirestore, enableIndexedDbPersistence } from "https://esm.sh/firebase@10.8.0/firestore";
 
 // Konfigurasi resmi dari proyek 'warung-pos' milik Anda
 const firebaseConfig = {
@@ -10,7 +9,7 @@ const firebaseConfig = {
   projectId: "warung-pos",
   storageBucket: "warung-pos.firebasestorage.app",
   messagingSenderId: "241812132692",
-  appId: "1:241812132692:web:6788fdf4c25eb1d297eec1"
+  appId: "1:241812132692:web:6788fdf4c25eb1d297eec1",
 };
 
 const app = initializeApp(firebaseConfig);
@@ -20,9 +19,9 @@ export const db_fs = getFirestore(app);
 // Aktifkan Offline Persistence
 // Ini sangat penting untuk Warung agar aplikasi tetap bisa transaksi meski sinyal lemah
 enableIndexedDbPersistence(db_fs).catch((err) => {
-    if (err.code === 'failed-precondition') {
-        console.warn('Persistence failed: Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-        console.warn('Persistence is not available in this browser');
-    }
+  if (err.code === "failed-precondition") {
+    console.warn("Persistence failed: Multiple tabs open");
+  } else if (err.code === "unimplemented") {
+    console.warn("Persistence is not available in this browser");
+  }
 });
