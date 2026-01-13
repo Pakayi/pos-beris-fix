@@ -1,6 +1,6 @@
-import { initializeApp } from "https://esm.sh/firebase@10.8.0/app";
-import { getAuth } from "https://esm.sh/firebase@10.8.0/auth";
-import { getFirestore, enableIndexedDbPersistence } from "https://esm.sh/firebase@10.8.0/firestore";
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
 // Konfigurasi resmi dari proyek 'warung-pos' milik Anda
 const firebaseConfig = {

@@ -13,8 +13,7 @@ import Login from "./pages/Login";
 import { PinGuard } from "./components/Security";
 import { db } from "./services/db";
 import { auth } from "./services/firebase";
-// Fix: Use CDN for Firebase Auth and import User as a type
-import { onAuthStateChanged, signOut, type User } from "https://esm.sh/firebase@10.8.0/auth";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { OfflineIndicator, Badge } from "./components/UI";
 import { UserProfile } from "./types";
 
