@@ -108,7 +108,6 @@ class DBService {
     if (!this.profile?.warungId) return;
     const wid = this.profile.warungId;
 
-    // Clear LocalStorage dulu (Biar tampilan langsung bersih)
     const keysToClear = [STORAGE_KEYS.PRODUCTS, STORAGE_KEYS.TRANSACTIONS, STORAGE_KEYS.CUSTOMERS, STORAGE_KEYS.SUPPLIERS, STORAGE_KEYS.PROCUREMENT, STORAGE_KEYS.DEBT_PAYMENTS];
     keysToClear.forEach((key) => localStorage.removeItem(key));
 
@@ -141,11 +140,13 @@ class DBService {
 
     const batch = writeBatch(db_fs);
 
+    // 1. Mock Suppliers
     const suppliers: Supplier[] = [
-      { id: "S-DEMO-1", name: "PT Sembako Makmur", contact: "081122334455", address: "Pasar Induk Kramat Jati", description: "Supplier beras dan minyak" },
-      { id: "S-DEMO-2", name: "Distributor Mie Jaya", contact: "085566778899", address: "Kawasan Industri Jababeka", description: "Spesialis mie instan" },
+      { id: "S-DEMO-1", name: "PT Sembako Makmur", contact: "081122334455", address: "Pasar Induk Kramat Jati", description: "Supplier utama beras" },
+      { id: "S-DEMO-2", name: "Grosir Aneka Mie", contact: "085566778899", address: "Kawasan Industri Jababeka", description: "Distributor mi instan" },
     ];
 
+    // 2. Mock Products
     const products: Product[] = [
       {
         id: "P-DEMO-1",
@@ -193,24 +194,68 @@ class DBService {
       },
     ];
 
+    // 3. Mock Customers (Beberapa punya hutang)
     const customers: Customer[] = [
       { id: "C-DEMO-1", name: "Ibu Budi (Tetangga)", phone: "081234567890", tier: "Gold", totalSpent: 1500000, debtBalance: 75000, joinedAt: now - 86400000 * 30 },
       { id: "C-DEMO-2", name: "Pak RT", phone: "089988776655", tier: "Silver", totalSpent: 500000, debtBalance: 0, joinedAt: now - 86400000 * 15 },
+    ];
+
+    // 4. Mock Transactions (Simulasi 3 hari terakhir)
+    const mockTxs: Transaction[] = [
+      {
+        id: "TX-DEMO-1",
+        timestamp: now - 86400000 * 2,
+        totalAmount: 45000,
+        paymentMethod: "cash",
+        cashPaid: 50000,
+        change: 5000,
+        items: [{ productId: "P-DEMO-1", productName: "Indomie Goreng Original", unitName: "Bks", price: 3500, buyPrice: 2800, quantity: 10, conversion: 1 }],
+      },
+      {
+        id: "TX-DEMO-2",
+        timestamp: now - 86400000 * 1,
+        totalAmount: 125000,
+        paymentMethod: "qris",
+        cashPaid: 125000,
+        change: 0,
+        items: [{ productId: "P-DEMO-2", productName: "Beras Rojo Lele 1L", unitName: "Liter", price: 12500, buyPrice: 10500, quantity: 10, conversion: 1 }],
+      },
+      {
+        id: "TX-DEMO-3",
+        timestamp: now,
+        totalAmount: 75000,
+        paymentMethod: "debt",
+        cashPaid: 0,
+        change: 0,
+        customerId: "C-DEMO-1",
+        customerName: "Ibu Budi (Tetangga)",
+        items: [{ productId: "P-DEMO-3", productName: "Le Minerale 600ml", unitName: "Botol", price: 4000, buyPrice: 3000, quantity: 15, conversion: 1 }],
+      },
+      {
+        id: "TX-DEMO-4",
+        timestamp: now - 3600000,
+        totalAmount: 15000,
+        paymentMethod: "cash",
+        cashPaid: 20000,
+        change: 5000,
+        items: [{ productId: "P-DEMO-1", productName: "Indomie Goreng Original", unitName: "Bks", price: 3500, buyPrice: 2800, quantity: 4, conversion: 1 }],
+      },
     ];
 
     // Push ke Batch
     suppliers.forEach((s) => batch.set(doc(db_fs, `warungs/${wid}/suppliers`, s.id), this.sanitizeForFirestore(s)));
     products.forEach((p) => batch.set(doc(db_fs, `warungs/${wid}/products`, p.id), this.sanitizeForFirestore(p)));
     customers.forEach((c) => batch.set(doc(db_fs, `warungs/${wid}/customers`, c.id), this.sanitizeForFirestore(c)));
+    mockTxs.forEach((t) => batch.set(doc(db_fs, `warungs/${wid}/transactions`, t.id), this.sanitizeForFirestore(t)));
 
     try {
       await batch.commit();
 
-      // PERBAIKAN UTAMA: Update LocalStorage secara MANUAL sekarang juga!
-      // Jangan nunggu Cloud Sync, biar data langsung muncul di layar user.
+      // Update LocalStorage
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
       localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
       localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(suppliers));
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(mockTxs));
 
       this.notifyAll();
     } catch (error) {
